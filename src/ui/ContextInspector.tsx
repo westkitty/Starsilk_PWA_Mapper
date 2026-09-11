@@ -2,11 +2,13 @@ import React from 'react';
 import { CelestialBody } from '../simulation/types';
 import { formatDistance, formatMass, formatRadius, formatVelocity, formatSimTime } from '../simulation/units';
 import { calculateOsculatingElements, detectResonance } from '../simulation/orbital-mechanics';
-import { Trash2, Focus, Move, Sparkles } from 'lucide-react';
+import { Trash2, Focus, Move, Sparkles, Eye } from 'lucide-react';
 
 interface ContextInspectorProps {
   selectedBody: CelestialBody | null;
   allBodies: CelestialBody[];
+  isFateLensActive?: boolean;
+  onToggleFateLens?: () => void;
   onUpdateBody: (body: CelestialBody) => void;
   onDeleteBody: (id: string) => void;
   onFocusBody: (id: string) => void;
@@ -17,6 +19,8 @@ interface ContextInspectorProps {
 export const ContextInspector: React.FC<ContextInspectorProps> = ({
   selectedBody,
   allBodies,
+  isFateLensActive,
+  onToggleFateLens,
   onUpdateBody,
   onDeleteBody,
   onFocusBody,
@@ -102,6 +106,50 @@ export const ContextInspector: React.FC<ContextInspectorProps> = ({
           </button>
         </div>
       </div>
+
+      {/* FATE LENS Aperture Toggle */}
+      {onToggleFateLens && (
+        <button
+          onClick={onToggleFateLens}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: isFateLensActive ? 'rgba(12, 198, 255, 0.16)' : 'rgba(3, 5, 10, 0.6)',
+            border: `1px solid ${isFateLensActive ? 'var(--accent-azure)' : 'var(--border-subtle)'}`,
+            borderRadius: '8px',
+            padding: '8px 12px',
+            cursor: 'pointer',
+            color: isFateLensActive ? 'var(--text-azure)' : 'var(--text-secondary)',
+            transition: 'all 0.2s ease',
+          }}
+          title="Toggle Fate Lens for selected body"
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Eye size={15} color={isFateLensActive ? '#0cc6ff' : 'var(--text-muted)'} />
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em' }}>
+                FATE LENS
+              </div>
+              <div style={{ fontSize: '9px', color: isFateLensActive ? 'var(--text-cyan)' : 'var(--text-muted)' }}>
+                {isFateLensActive ? 'THEN → NOW → POSSIBLE' : 'Perceive body across time'}
+              </div>
+            </div>
+          </div>
+          <span style={{
+            fontSize: '9px',
+            fontWeight: 700,
+            fontFamily: 'var(--font-mono)',
+            padding: '2px 8px',
+            borderRadius: '4px',
+            background: isFateLensActive ? 'var(--accent-azure)' : 'rgba(255, 255, 255, 0.06)',
+            color: isFateLensActive ? '#03050a' : 'var(--text-muted)',
+            letterSpacing: '0.04em',
+          }}>
+            {isFateLensActive ? 'ACTIVE' : 'ENGAGE'}
+          </span>
+        </button>
+      )}
 
       {/* Resonance Alert Banner if detected */}
       {resonanceText && (

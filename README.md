@@ -96,6 +96,9 @@ Fork any state into a named branch (e.g., "Prime", "Black Hole Injected", "Moon 
 ### 4. Deterministic System Sigil
 Every system state generates a unique, deterministic SVG System Sigil based on star spectral type, body count, total angular momentum, and orbital hierarchy. Sigils serve as instant visual identifiers and export stamps.
 
+### 5. Procedural 3D Starfield & Camera Parallax
+A bounded, deterministic 4,550-star celestial environment organized into three distinct spherical depth bands (Deep: 3,000 stars, Mid: 1,200 stars, Near: 350 stars). Features custom soft anti-aliased Gaussian point shaders (eliminating square sprites) and camera-relative differential parallax tracking. Translating, zooming, or orbiting the camera causes nearer stellar layers to shift with authentic spatial depth against an immovable distant backdrop, while pure camera rotation preserves 100% rigid celestial sphere coherence with zero raycast contamination.
+
 ---
 
 ## 5. Starsilk Canon Lab
@@ -151,6 +154,12 @@ npm run preview
 
 # Refresh canonical dossier snapshot from remote compendium
 npm run canon:refresh
+
+# Run automated Android physical QA over ADB (Galaxy Tab S9 / Android Chrome)
+npm run qa:android
+
+# Run assisted physical S Pen and palm-rejection QA over ADB
+npm run qa:android:pen
 ```
 
 ---

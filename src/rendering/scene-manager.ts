@@ -24,6 +24,8 @@ import {
 } from './celestial-shaders';
 import { TrajectoryRenderer } from './trajectory-renderer';
 import { GravityGridRenderer } from './gravity-grid';
+import { FateLensRenderer } from './fate-lens-renderer';
+import { StarfieldRenderer } from './starfield-renderer';
 
 export type CameraViewMode = 'inertial' | 'focus_selected' | 'follow_selected' | 'top_down';
 
@@ -36,6 +38,8 @@ export class SceneManager {
   public scaleTransform: ScaleTransform;
   public trajectoryRenderer: TrajectoryRenderer;
   public gravityGrid: GravityGridRenderer;
+  public fateLensRenderer: FateLensRenderer;
+  public starfieldRenderer: StarfieldRenderer;
 
   // Visual mesh dictionary keyed by body ID
   private bodyMeshes: Map<string, THREE.Group> = new Map();
@@ -47,9 +51,6 @@ export class SceneManager {
   private desiredTarget = new THREE.Vector3(0, 0, 0);
   private cameraDistance = 250.0;
   private cameraSpherical = new THREE.Spherical(250, Math.PI / 3, Math.PI / 4);
-
-  // Background starfield
-  private starfield: THREE.Points | null = null;
 
   private clock = new THREE.Clock();
 
@@ -89,52 +90,14 @@ export class SceneManager {
     this.gravityGrid = new GravityGridRenderer(this.scaleTransform);
     this.scene.add(this.gravityGrid.getMesh());
 
-    // Background starfield
-    this.initBackgroundStarfield();
-  }
+    // Fate Lens renderer (THEN -> NOW -> POSSIBLE)
+    this.fateLensRenderer = new FateLensRenderer(this.scaleTransform, this.floatingOrigin);
+    this.scene.add(this.fateLensRenderer.getGroup());
 
-  private initBackgroundStarfield(): void {
-    const starCount = 3500;
-    const geometry = new THREE.BufferGeometry();
-    const positions = new Float32Array(starCount * 3);
-    const colors = new Float32Array(starCount * 3);
-
-    const colorPalette = [
-      new THREE.Color('#ffffff'),
-      new THREE.Color('#a0c8ff'),
-      new THREE.Color('#b6f6ff'),
-      new THREE.Color('#e0e4eb'),
-    ];
-
-    for (let i = 0; i < starCount; i++) {
-      // Distribute on distant sphere
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(Math.random() * 2 - 1);
-      const r = 25000 + Math.random() * 5000;
-
-      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-      positions[i * 3 + 2] = r * Math.cos(phi);
-
-      const c = colorPalette[Math.floor(Math.random() * colorPalette.length)];
-      colors[i * 3] = c.r;
-      colors[i * 3 + 1] = c.g;
-      colors[i * 3 + 2] = c.b;
-    }
-
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-    const material = new THREE.PointsMaterial({
-      size: 1.5,
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.75,
-      depthWrite: false,
-    });
-
-    this.starfield = new THREE.Points(geometry, material);
-    this.scene.add(this.starfield);
+    // Background starfield with camera parallax
+    this.starfieldRenderer = new StarfieldRenderer(this.renderer.getPixelRatio());
+    this.scene.add(this.starfieldRenderer.getGroup());
+    this.starfieldRenderer.update(this.camera);
   }
 
   /**
@@ -261,12 +224,24 @@ export class SceneManager {
 
   public setSelectedBody(id: string | null): void {
     this.selectedBodyId = id;
+    this.fateLensRenderer.setTargetBody(id);
     for (const [bodyId, group] of this.bodyMeshes) {
       const halo = group.getObjectByName('selectionHalo');
       if (halo) {
         halo.visible = bodyId === id;
       }
     }
+  }
+
+  public setFateLensActive(active: boolean): void {
+    this.fateLensRenderer.setActive(active);
+    if (this.selectedBodyId) {
+      this.fateLensRenderer.setTargetBody(this.selectedBodyId);
+    }
+  }
+
+  public isFateLensActive(): boolean {
+    return this.fateLensRenderer.getIsActive();
   }
 
   // Camera navigation methods
@@ -308,6 +283,7 @@ export class SceneManager {
     const offset = new THREE.Vector3().setFromSpherical(this.cameraSpherical);
     this.camera.position.copy(this.cameraTarget).add(offset);
     this.camera.lookAt(this.cameraTarget);
+    this.starfieldRenderer?.update(this.camera);
   }
 
   public update(deltaSec: number): void {
@@ -327,6 +303,7 @@ export class SceneManager {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height, false);
+    this.starfieldRenderer?.setPixelRatio(this.renderer.getPixelRatio());
   }
 
   /**
@@ -357,6 +334,25 @@ export class SceneManager {
   }
 
   /**
+   * Compute 2D screen coordinates (in client CSS pixels) for a given celestial body.
+   */
+  public getBodyScreenPosition(bodyId: string): { x: number; y: number } | null {
+    const group = this.bodyMeshes.get(bodyId);
+    if (!group) return null;
+    this.camera.updateMatrixWorld();
+    group.updateMatrixWorld(true);
+    const p = new THREE.Vector3();
+    group.getWorldPosition(p);
+    p.project(this.camera);
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    return {
+      x: (p.x * 0.5 + 0.5) * rect.width + rect.left,
+      y: (-(p.y * 0.5) + 0.5) * rect.height + rect.top,
+    };
+  }
+
+
+  /**
    * Raycast onto the orbital reference plane (y = 0 relative to target) to get 3D intersection.
    */
   public raycastOrbitalPlane(normalizedX: number, normalizedY: number, planeY: number = 0): Vector3D | null {
@@ -371,5 +367,19 @@ export class SceneManager {
       return { x: hit.x, y: hit.y, z: hit.z };
     }
     return null;
+  }
+
+  public dispose(): void {
+    this.starfieldRenderer?.dispose();
+    if (this.starfieldRenderer) {
+      this.scene.remove(this.starfieldRenderer.getGroup());
+    }
+    this.fateLensRenderer.dispose();
+    this.trajectoryRenderer.clearAll();
+    for (const [, group] of this.bodyMeshes) {
+      this.scene.remove(group);
+    }
+    this.bodyMeshes.clear();
+    this.renderer.dispose();
   }
 }

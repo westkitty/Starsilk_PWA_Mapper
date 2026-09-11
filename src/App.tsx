@@ -29,6 +29,43 @@ import { CreateBodyModal } from './ui/CreateBodyModal';
 import { EventLedgerModal } from './ui/EventLedgerModal';
 import { BranchCompareModal } from './ui/BranchCompareModal';
 import { OrbitLoomConfirmModal } from './ui/OrbitLoomConfirmModal';
+import { FateLensBadge } from './ui/FateLensBadge';
+import { TemporalHistoryBuffer } from './rendering/temporal-history';
+import { stepVelocityVerlet } from './simulation/integrator';
+import { TimelineBranch } from './branching/branch-types';
+import { BranchTrajectory } from './rendering/fate-lens-renderer';
+import { PredictedPoint } from './workers/future.worker';
+import { Vector3D } from './simulation/types';
+
+/**
+ * Deterministically projects forward trajectory for an alternate branch without mutating active state.
+ */
+function projectBranchTrajectory(
+  branch: TimelineBranch,
+  targetBodyId: string,
+  steps: number = 80,
+  dtSeconds: number = 300
+): Vector3D[] {
+  const bodiesClone = branch.snapshot.bodies.map(b => ({
+    ...b,
+    position: { ...b.position },
+    velocity: { ...b.velocity },
+  }));
+  const target = bodiesClone.find(b => b.id === targetBodyId);
+  if (!target) return [];
+
+  const points: Vector3D[] = [{ ...target.position }];
+  const sampleInterval = Math.max(1, Math.floor(steps / 40));
+
+  for (let s = 0; s < steps; s++) {
+    stepVelocityVerlet(bodiesClone, dtSeconds);
+    if (s % sampleInterval === 0 || s === steps - 1) {
+      points.push({ ...target.position });
+    }
+  }
+
+  return points;
+}
 
 export const App: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -59,6 +96,7 @@ export const App: React.FC = () => {
   const [simTimeSec, setSimTimeSec] = useState(0);
   const [eventCount, setEventCount] = useState(0);
   const [sigilSvg, setSigilSvg] = useState('');
+  const [isFateLensActive, setIsFateLensActive] = useState(false);
 
   // Orbit Loom pending fitted orbit
   const [pendingOrbit, setPendingOrbit] = useState<FittedOrbit | null>(null);
@@ -89,6 +127,13 @@ export const App: React.FC = () => {
 
   const showSensitivityRef = useRef<boolean>(showSensitivity);
   showSensitivityRef.current = showSensitivity;
+
+  const isFateLensActiveRef = useRef<boolean>(isFateLensActive);
+  isFateLensActiveRef.current = isFateLensActive;
+
+  const temporalHistoryRef = useRef<TemporalHistoryBuffer>(new TemporalHistoryBuffer(120, 0.25));
+  const futureTrajectoriesRef = useRef<Record<string, PredictedPoint[]>>({});
+  const branchTrajectoryCacheRef = useRef<Map<string, { points: Vector3D[]; snapshotTimestamp: number }>>(new Map());
 
   const selectedBodyIdRef = useRef<string | null>(selectedBodyId);
   selectedBodyIdRef.current = selectedBodyId;
@@ -131,6 +176,16 @@ export const App: React.FC = () => {
     }
   }, [showFuture, showSensitivity]);
 
+  // Fate Lens selected body transition: request immediate forecast for new target body
+  useEffect(() => {
+    if (isFateLensActive && selectedBodyId && futureClientRef.current && engineRef.current) {
+      futureClientRef.current.requestForecast(engineRef.current.bodies, {
+        selectedBodyId,
+        calculateSensitivity: false,
+      });
+    }
+  }, [selectedBodyId, isFateLensActive]);
+
   // Initialize System
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -138,6 +193,9 @@ export const App: React.FC = () => {
     // 1. Initialize SceneManager
     const sceneMgr = new SceneManager(canvasRef.current);
     sceneRef.current = sceneMgr;
+    if (typeof window !== 'undefined') {
+      (window as any).__sceneMgr = sceneMgr;
+    }
 
     // 2. Initialize SimulationEngine with built-in Demo System
     const initialPreset = createDemonstrationSystem();
@@ -192,6 +250,7 @@ export const App: React.FC = () => {
 
     // 6. Initialize Future Client
     const futureClient = new FutureClient((response) => {
+      futureTrajectoriesRef.current = response.trajectories;
       // Sync predicted paths to trajectory renderer with fresh selectedBodyId check
       for (const [bodyId, points] of Object.entries(response.trajectories)) {
         sceneMgr.trajectoryRenderer.updateBodyTrajectory({
@@ -376,8 +435,73 @@ export const App: React.FC = () => {
       // Update simulation physics
       engine.update(deltaSec);
 
+      // Presentation-layer temporal history recording (bounded ring buffer)
+      if (!engine.isPaused) {
+        for (const b of engine.bodies) {
+          temporalHistoryRef.current.recordSample(b.id, b.position, b.velocity, engine.timeSec);
+        }
+      }
+
       // Sync positions to 3D scene
       sceneMgr.syncBodies(engine.bodies);
+
+      // Fate Lens presentation update (THEN -> NOW -> POSSIBLE)
+      if (isFateLensActiveRef.current && selectedBodyIdRef.current) {
+        const curBody = engine.bodies.find(b => b.id === selectedBodyIdRef.current) || null;
+        const echoes = temporalHistoryRef.current.getRecentEchoes(selectedBodyIdRef.current, 6);
+        const nominalPoints = (futureTrajectoriesRef.current[selectedBodyIdRef.current] || []).map(p => p.positionKm);
+
+        // Multi-branch comparison if branches exist
+        const branchTracks: BranchTrajectory[] = [];
+        if (branchManagerRef.current) {
+          const allBranches = branchManagerRef.current.getAllBranches();
+          if (allBranches.length > 1) {
+            const branchColors = ['#0cc6ff', '#f59e0b', '#ff4d64', '#10b981', '#a855f7'];
+            allBranches.forEach((br, idx) => {
+              const color = branchColors[idx % branchColors.length];
+              if (br.id === branchManagerRef.current?.activeBranchId) {
+                branchTracks.push({
+                  branchId: br.id,
+                  branchName: br.name,
+                  colorHex: color,
+                  points: nominalPoints.length > 0 ? nominalPoints : (curBody ? [{ ...curBody.position }] : []),
+                });
+              } else {
+                const cacheKey = `${br.id}_${selectedBodyIdRef.current}`;
+                const cached = branchTrajectoryCacheRef.current.get(cacheKey);
+                let brPoints: Vector3D[];
+                if (cached && cached.snapshotTimestamp === br.snapshot.timestampSec) {
+                  brPoints = cached.points;
+                } else {
+                  brPoints = projectBranchTrajectory(br, selectedBodyIdRef.current!, 80, 300);
+                  branchTrajectoryCacheRef.current.set(cacheKey, {
+                    points: brPoints,
+                    snapshotTimestamp: br.snapshot.timestampSec,
+                  });
+                }
+                if (brPoints.length > 0) {
+                  branchTracks.push({
+                    branchId: br.id,
+                    branchName: br.name,
+                    colorHex: color,
+                    points: brPoints,
+                  });
+                }
+              }
+            });
+          }
+        }
+
+        sceneMgr.fateLensRenderer.update(
+          deltaSec,
+          curBody,
+          echoes,
+          nominalPoints,
+          branchTracks,
+          sceneMgr.camera
+        );
+      }
+
       sceneMgr.update(deltaSec);
       sceneMgr.render();
 
@@ -390,7 +514,7 @@ export const App: React.FC = () => {
         setFrameCount(f => f + 1);
 
         // Periodic future forecast update
-        if (showFutureRef.current && futureClientRef.current && !engine.isPaused) {
+        if ((showFutureRef.current || isFateLensActiveRef.current) && futureClientRef.current && !engine.isPaused) {
           futureClientRef.current.requestForecast(engine.bodies, {
             selectedBodyId: sceneMgr.selectedBodyId,
             calculateSensitivity: showSensitivityRef.current,
@@ -438,6 +562,10 @@ export const App: React.FC = () => {
       window.removeEventListener('resize', handleResize);
       pointerMgr.destroy();
       futureClient.destroy();
+      sceneMgr.dispose();
+      if (typeof window !== 'undefined') {
+        delete (window as any).__sceneMgr;
+      }
     };
   }, []);
 
@@ -495,6 +623,35 @@ export const App: React.FC = () => {
     if (next) audioSynth.playTick();
   };
 
+  // Fate Lens Toggle Handler
+  const handleToggleFateLens = () => {
+    const next = !isFateLensActive;
+    setIsFateLensActive(next);
+    isFateLensActiveRef.current = next;
+
+    if (next) {
+      audioSynth.playResonance();
+      // If no body selected, auto-select first planet or star so Fate Lens is immediately visible
+      if (!selectedBodyIdRef.current && engineRef.current && engineRef.current.bodies.length > 0) {
+        const candidate = engineRef.current.bodies.find(b => b.type === 'planet') || engineRef.current.bodies[0];
+        if (candidate) {
+          setSelectedBodyId(candidate.id);
+          selectedBodyIdRef.current = candidate.id;
+          sceneRef.current?.setSelectedBody(candidate.id);
+        }
+      }
+      if (futureClientRef.current && engineRef.current) {
+        futureClientRef.current.requestForecast(engineRef.current.bodies, {
+          selectedBodyId: selectedBodyIdRef.current,
+          calculateSensitivity: showSensitivityRef.current,
+        });
+      }
+      sceneRef.current?.setFateLensActive(true);
+    } else {
+      sceneRef.current?.setFateLensActive(false);
+    }
+  };
+
   // Branching: Fork Branch
   const handleForkBranch = () => {
     if (branchManagerRef.current && engineRef.current) {
@@ -514,6 +671,9 @@ export const App: React.FC = () => {
       branchManagerRef.current.switchBranch(id, engineRef.current);
       setActiveBranchId(id);
       setSystemStatus(engineRef.current.systemStatus);
+      temporalHistoryRef.current.clear();
+      branchTrajectoryCacheRef.current.clear();
+      sceneRef.current.fateLensRenderer.clearVisuals();
       sceneRef.current.syncBodies(engineRef.current.bodies);
       setSelectedBodyId(null);
       selectedBodyIdRef.current = null;
@@ -552,6 +712,11 @@ export const App: React.FC = () => {
     branchManagerRef.current = bMgr;
     setBranches(bMgr.getAllBranches());
     setActiveBranchId(bMgr.activeBranchId);
+
+    // Clear temporal history to prevent stale leakage
+    temporalHistoryRef.current.clear();
+    branchTrajectoryCacheRef.current.clear();
+    sceneRef.current.fateLensRenderer.clearVisuals();
 
     // Update scene
     sceneRef.current.syncBodies(engineRef.current.bodies);
@@ -660,6 +825,11 @@ export const App: React.FC = () => {
             setBranches(bMgr.getAllBranches());
             setActiveBranchId(bMgr.activeBranchId);
 
+            // Clear temporal history to prevent stale leakage
+            temporalHistoryRef.current.clear();
+            branchTrajectoryCacheRef.current.clear();
+            sceneRef.current.fateLensRenderer.clearVisuals();
+
             setProjectName(project.projectName);
             sceneRef.current.syncBodies(engineRef.current.bodies);
             setSigilSvg(generateSystemSigilSvg(project.projectName, engineRef.current.bodies));
@@ -708,11 +878,27 @@ export const App: React.FC = () => {
         {/* Center Canvas Area (Tap void handled by pointer-manager) */}
         <div style={{ flex: 1, pointerEvents: 'none' }} />
 
+        {/* Fate Lens Floating State Indicator */}
+        {isFateLensActive && selectedBody && (
+          <FateLensBadge
+            selectedBody={selectedBody}
+            onClose={handleToggleFateLens}
+            echoCount={temporalHistoryRef.current.getSampleCount(selectedBody.id)}
+            branchNames={branches.map((b, idx) => ({
+              id: b.id,
+              name: b.name,
+              color: ['#0cc6ff', '#f59e0b', '#ff4d64', '#10b981', '#a855f7'][idx % 5],
+            }))}
+          />
+        )}
+
         {/* Selected Body Inspector */}
         {selectedBody && (
           <ContextInspector
             selectedBody={selectedBody}
             allBodies={engineRef.current?.bodies || []}
+            isFateLensActive={isFateLensActive}
+            onToggleFateLens={handleToggleFateLens}
             onUpdateBody={(updated) => {
               if (engineRef.current && sceneRef.current) {
                 const idx = engineRef.current.bodies.findIndex(b => b.id === updated.id);
@@ -726,6 +912,7 @@ export const App: React.FC = () => {
             onDeleteBody={(id) => {
               if (engineRef.current && sceneRef.current) {
                 engineRef.current.removeBody(id);
+                temporalHistoryRef.current.clearBody(id);
                 sceneRef.current.syncBodies(engineRef.current.bodies);
                 setSelectedBodyId(null);
                 selectedBodyIdRef.current = null;
@@ -776,6 +963,9 @@ export const App: React.FC = () => {
         onToggleShowFuture={() => setShowFuture(!showFuture)}
         showSensitivity={showSensitivity}
         onToggleShowSensitivity={() => setShowSensitivity(!showSensitivity)}
+        isFateLensActive={isFateLensActive}
+        onToggleFateLens={handleToggleFateLens}
+        hasSelectedBody={!!selectedBodyId}
         onOpenCreateModal={() => setIsCreateModalOpen(true)}
         onOpenCanonLab={() => setIsCanonLabOpen(true)}
         onResetCamera={() => {

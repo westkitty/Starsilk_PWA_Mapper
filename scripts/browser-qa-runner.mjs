@@ -225,6 +225,7 @@ async function runBrowserValidation() {
     journey2_tool_switching: false,
     journey3_touch_loom: false,
     journey4_canon_lab: false,
+    journey5_fate_lens: false,
   };
 
   // ==========================================
@@ -558,10 +559,90 @@ async function runBrowserValidation() {
   // Close Canon Lab
   await client.evaluate(`
     (() => {
-      const closeBtn = document.querySelector('.modal-header button, button.btn-close, .modal-backdrop button');
+      const closeBtn = document.querySelector('.canon-lab-modal button, .modal-header button, button.btn-close');
       closeBtn?.click();
     })()
   `, sid);
+  await new Promise((r) => setTimeout(r, 400));
+
+  // ==========================================
+  // JOURNEY 5 — FATE LENS (THEN -> NOW -> POSSIBLE)
+  // ==========================================
+  console.log('\n--- EXERCISING JOURNEY 5: FATE LENS TEMPORAL APERTURE ---');
+  // 1. Click FATE button in ToolRail
+  const fateBtnClick = await client.evaluate(`
+    (() => {
+      const btns = Array.from(document.querySelectorAll('.left-tool-rail .tool-button'));
+      const fateBtn = btns.find(b => b.textContent.includes('FATE'));
+      if (!fateBtn) return { found: false };
+      fateBtn.click();
+      return { found: true };
+    })()
+  `, sid);
+  console.log('  FATE button clicked:', fateBtnClick);
+
+  await new Promise((r) => setTimeout(r, 800));
+
+  // 2. Audit Fate Lens state in DOM
+  const fateLensAudit = await client.evaluate(`
+    (() => {
+      const fateBtn = Array.from(document.querySelectorAll('.left-tool-rail .tool-button')).find(b => b.textContent.includes('FATE'));
+      const fateBtnActive = fateBtn?.classList.contains('active') ?? false;
+      const badge = document.querySelector('.fate-lens-badge');
+      const hasBadge = !!badge;
+      const text = badge ? badge.innerText : '';
+      const hasThen = text.includes('THEN');
+      const hasNow = text.includes('NOW');
+      const hasPossible = text.includes('POSSIBLE');
+      const inspectorText = document.querySelector('.right-inspector-panel')?.innerText || '';
+      const hasInspectorEngaged = inspectorText.includes('FATE LENS');
+
+      return {
+        fateBtnActive,
+        hasBadge,
+        hasThen,
+        hasNow,
+        hasPossible,
+        hasInspectorEngaged,
+      };
+    })()
+  `, sid);
+  console.log('  Fate Lens Audit:', fateLensAudit);
+
+  // Capture evidence screenshot with FATE LENS active!
+  const fateScreenshot = await client.send('Page.captureScreenshot', { format: 'png' }, sid);
+  const fatePath = path.resolve(__dirname, '../fate-lens-evidence.png');
+  fs.writeFileSync(fatePath, Buffer.from(fateScreenshot.data, 'base64'));
+  console.log(`[Screenshot] Fate Lens active evidence saved to ${fatePath}`);
+
+  // 3. Let time advance a bit to record temporal echoes
+  await new Promise((r) => setTimeout(r, 1000));
+
+  // 4. Close Fate Lens via close button
+  await client.evaluate(`
+    (() => {
+      const closeBtn = document.querySelector('.fate-lens-close-btn');
+      closeBtn?.click();
+    })()
+  `, sid);
+  await new Promise((r) => setTimeout(r, 300));
+
+  const afterCloseAudit = await client.evaluate(`
+    (() => {
+      const badgeStillExists = !!document.querySelector('.fate-lens-badge');
+      return { badgeStillExists };
+    })()
+  `, sid);
+  console.log('  After Close Audit:', afterCloseAudit);
+
+  results.journey5_fate_lens =
+    fateBtnClick.found &&
+    fateLensAudit.hasBadge &&
+    fateLensAudit.hasThen &&
+    fateLensAudit.hasNow &&
+    fateLensAudit.hasPossible &&
+    !afterCloseAudit.badgeStillExists;
+  console.log('Journey 5 Status:', results.journey5_fate_lens ? 'PASS' : 'FAIL');
 
   // Final Screenshot for evidence
   const screenshotData = await client.send('Page.captureScreenshot', { format: 'png' }, sid);
@@ -585,7 +666,7 @@ async function runBrowserValidation() {
     console.error('One or more journeys failed!');
     process.exit(1);
   }
-  console.log('\nALL 4 CRITICAL BROWSER JOURNEYS PASSED CLEANLY!\n');
+  console.log('\nALL 5 CRITICAL BROWSER JOURNEYS PASSED CLEANLY!\n');
   process.exit(0);
 }
 

@@ -24,3 +24,7 @@ pnpm-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Local test & physical QA evidence
+evidence/
+*-evidence.png

@@ -11,7 +11,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "verify": "npm run typecheck && npm run test && npm run build",
-    "canon:refresh": "node scripts/refresh-canon.mjs"
+    "canon:refresh": "node scripts/refresh-canon.mjs",
+    "qa:android": "node scripts/android-adb-qa.mjs",
+    "qa:android:pen": "node scripts/android-adb-qa.mjs --pen"
   },
   "dependencies": {
     "lucide-react": "^1.16.0",

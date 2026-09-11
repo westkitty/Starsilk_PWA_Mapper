@@ -1,5 +1,5 @@
 import React from 'react';
-import { MousePointer, Hand, PlusCircle, Compass, GitCommit, Waves, Focus, BookOpen } from 'lucide-react';
+import { MousePointer, Hand, PlusCircle, Compass, GitCommit, Waves, Focus, BookOpen, Eye } from 'lucide-react';
 import { PointerToolMode } from '../interaction/pointer-manager';
 
 interface ToolRailProps {
@@ -9,6 +9,9 @@ interface ToolRailProps {
   onToggleShowFuture: () => void;
   showSensitivity: boolean;
   onToggleShowSensitivity: () => void;
+  isFateLensActive?: boolean;
+  onToggleFateLens?: () => void;
+  hasSelectedBody?: boolean;
   onOpenCreateModal: () => void;
   onOpenCanonLab?: () => void;
   onResetCamera: () => void;
@@ -21,6 +24,9 @@ export const ToolRail: React.FC<ToolRailProps> = ({
   onToggleShowFuture,
   showSensitivity,
   onToggleShowSensitivity,
+  isFateLensActive,
+  onToggleFateLens,
+  hasSelectedBody,
   onOpenCreateModal,
   onOpenCanonLab,
   onResetCamera,
@@ -86,6 +92,19 @@ export const ToolRail: React.FC<ToolRailProps> = ({
         <Waves size={18} />
         <span>SENSITIVITY</span>
       </button>
+
+      {/* Fate Lens */}
+      {onToggleFateLens && (
+        <button
+          className={`tool-button ${isFateLensActive ? 'active' : ''}`}
+          onClick={onToggleFateLens}
+          title={hasSelectedBody ? "Fate Lens: Temporal visualization (THEN → NOW → POSSIBLE)" : "Fate Lens: Select a body to perceive causality across time"}
+          aria-label="Fate Lens"
+        >
+          <Eye size={18} color={isFateLensActive ? '#0cc6ff' : undefined} />
+          <span>FATE</span>
+        </button>
+      )}
 
       {/* Canon Lab Button */}
       {onOpenCanonLab && (
