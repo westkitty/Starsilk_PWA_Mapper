@@ -3,9 +3,13 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 
+// Keep the existing local/ADB preview path by default while allowing the
+// GitHub Pages workflow to build for the canonical public repository path.
+const publicBase = process.env.VITE_PUBLIC_BASE || '/Star_System_Planner/';
+
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/Star_System_Planner/',
+  base: publicBase,
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
