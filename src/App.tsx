@@ -30,12 +30,22 @@ import { EventLedgerModal } from './ui/EventLedgerModal';
 import { BranchCompareModal } from './ui/BranchCompareModal';
 import { OrbitLoomConfirmModal } from './ui/OrbitLoomConfirmModal';
 import { FateLensBadge } from './ui/FateLensBadge';
+import { StylusHoverCalipers, StylusHoverState } from './ui/StylusHoverCalipers';
+import { CanvasContactRipples, ContactRipple } from './ui/CanvasContactRipples';
+import { OrientationCube } from './ui/OrientationCube';
+import { ScaleBar } from './ui/ScaleBar';
+import { MeasurementTool } from './ui/MeasurementTool';
+import { ManipulationTelemetry, LiveManipulationStats } from './ui/ManipulationTelemetry';
+import { OffscreenPointers } from './ui/OffscreenPointers';
+import { GestureCoach } from './ui/GestureCoach';
+import { ControlsHelpModal } from './ui/ControlsHelpModal';
 import { TemporalHistoryBuffer } from './rendering/temporal-history';
 import { stepVelocityVerlet } from './simulation/integrator';
 import { TimelineBranch } from './branching/branch-types';
 import { BranchTrajectory } from './rendering/fate-lens-renderer';
 import { PredictedPoint } from './workers/future.worker';
 import { Vector3D } from './simulation/types';
+import { calculateOsculatingElements, findDominantPrimary } from './simulation/orbital-mechanics';
 
 /**
  * Deterministically projects forward trajectory for an alternate branch without mutating active state.
@@ -101,11 +111,26 @@ export const App: React.FC = () => {
   // Orbit Loom pending fitted orbit
   const [pendingOrbit, setPendingOrbit] = useState<FittedOrbit | null>(null);
 
+  // Tablet & Stylus telemetry (Phase D #22 & #25A)
+  const [stylusHover, setStylusHover] = useState<StylusHoverState | null>(null);
+  const [contactRipples, setContactRipples] = useState<ContactRipple[]>([]);
+
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isCanonLabOpen, setIsCanonLabOpen] = useState(false);
   const [isLedgerOpen, setIsLedgerOpen] = useState(false);
   const [isCompareOpen, setIsCompareOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isMeasurementOpen, setIsMeasurementOpen] = useState(false);
+
+  // Interaction & Instrumentation Expansion (#26–#50)
+  const [isPrecisionMode, setIsPrecisionMode] = useState(false);
+  const [manipulationStats, setManipulationStats] = useState<LiveManipulationStats | null>(null);
+  const [cameraDistance, setCameraDistance] = useState(280);
+  const [viewportDims, setViewportDims] = useState<{ width: number; height: number }>({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1280,
+    height: typeof window !== 'undefined' ? window.innerHeight : 800,
+  });
 
   // Timeline Branches
   const [branches, setBranches] = useState<any[]>([]);
@@ -284,6 +309,10 @@ export const App: React.FC = () => {
           pointerCount: pointerMgr.getActivePointerCount(),
         });
 
+        // Trigger tactile contact ripple (Phase D #25A)
+        setContactRipples(prev => [...prev.slice(-8), { id: Date.now() + Math.random(), x: e.clientX, y: e.clientY }]);
+        setStylusHover(null);
+
         if (intent === 'orbit_loom_draw') {
           pointerMgr.isDrawingOrbit = true;
           // Ensure appropriate primary is set
@@ -334,13 +363,80 @@ export const App: React.FC = () => {
         const normX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
         const normY = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
 
+        // S Pen Hover inspection telemetry (Phase D #22)
+        if (e.pointerType === 'pen' && e.rawEvent.buttons === 0 && !pointerMgr.isDrawingOrbit && !pointerMgr.isManipulatingObject) {
+          const hitBodyId = sceneMgr.raycastBody(normX, normY);
+          const hoveredBody = hitBodyId ? engine.bodies.find(b => b.id === hitBodyId) || null : null;
+          const worldPos = sceneMgr.raycastOrbitalPlane(normX, normY);
+
+          let nearestBody: CelestialBody | null = null;
+          let distanceToNearestKm: number | undefined = undefined;
+          let distanceToSelectedKm: number | undefined = undefined;
+
+          const selBody = selectedBodyIdRef.current ? engine.bodies.find(b => b.id === selectedBodyIdRef.current) || null : null;
+
+          if (worldPos) {
+            let minDist = Infinity;
+            for (const b of engine.bodies) {
+              const d = Math.hypot(b.position.x - worldPos.x, b.position.y - worldPos.y, b.position.z - worldPos.z);
+              if (d < minDist) {
+                minDist = d;
+                nearestBody = b;
+              }
+            }
+            distanceToNearestKm = minDist;
+
+            if (selBody) {
+              distanceToSelectedKm = Math.hypot(selBody.position.x - worldPos.x, selBody.position.y - worldPos.y, selBody.position.z - worldPos.z);
+            }
+          }
+
+          setStylusHover({
+            screenX: e.clientX,
+            screenY: e.clientY,
+            worldPos,
+            hoveredBody,
+            nearestBody,
+            selectedBody: selBody,
+            distanceToNearestKm,
+            distanceToSelectedKm,
+          });
+        } else {
+          setStylusHover(null);
+        }
+
         if (pointerMgr.isDrawingOrbit) {
           loom.addStrokePoint(normX, normY);
+          if (loom.currentFittedOrbit) {
+            setManipulationStats({
+              mode: 'orbit_loom',
+              bodyName: 'Fitted Orbit',
+              semiMajorAxisKm: loom.currentFittedOrbit.semiMajorAxisKm,
+              eccentricity: loom.currentFittedOrbit.eccentricity,
+              inclinationDeg: loom.currentFittedOrbit.inclinationDeg,
+              isBound: loom.currentFittedOrbit.isBound,
+            });
+          }
           return;
         }
 
         if (pointerMgr.isManipulatingObject && grabThrow.isDragging()) {
           grabThrow.updateDrag(normX, normY);
+          const b = grabThrow.activeBody;
+          if (b) {
+            const prim = findDominantPrimary(b, engine.bodies);
+            const speed = Math.hypot(b.velocity.x, b.velocity.y, b.velocity.z);
+            const osc = prim ? calculateOsculatingElements(b, prim) : undefined;
+            setManipulationStats({
+              mode: 'grab_throw',
+              bodyName: b.name,
+              velocityKmS: speed,
+              semiMajorAxisKm: osc?.semiMajorAxisKm,
+              eccentricity: osc?.eccentricity,
+              inclinationDeg: osc?.inclinationDeg,
+              isBound: osc ? osc.eccentricity < 1.0 : true,
+            });
+          }
           return;
         }
 
@@ -350,6 +446,8 @@ export const App: React.FC = () => {
         }
       },
       onPointerUp: () => {
+        setStylusHover(null);
+        setManipulationStats(null);
         if (pointerMgr.isDrawingOrbit) {
           pointerMgr.isDrawingOrbit = false;
           const fitted = loom.endStroke();
@@ -364,17 +462,45 @@ export const App: React.FC = () => {
         }
       },
       onPointerCancel: () => {
+        setStylusHover(null);
+        setManipulationStats(null);
         pointerMgr.isDrawingOrbit = false;
         pointerMgr.isManipulatingObject = false;
         loom.clear();
         setPendingOrbit(null);
         grabThrow.cancelGrab();
       },
-      onPinchZoom: (factor) => {
-        sceneMgr.zoomCamera(factor);
+      onPointerLeave: () => {
+        setStylusHover(null);
+      },
+      onPinchZoom: (factor, center) => {
+        const rect = canvasRef.current?.getBoundingClientRect();
+        const w = rect ? rect.width : window.innerWidth;
+        const h = rect ? rect.height : window.innerHeight;
+        const x = rect ? center.x - rect.left : center.x;
+        const y = rect ? center.y - rect.top : center.y;
+        sceneMgr.zoomCameraAtPoint(factor, x, y, w, h);
       },
       onTwoFingerPan: (dx, dy) => {
-        sceneMgr.panCamera(dx, dy);
+        const rect = canvasRef.current?.getBoundingClientRect();
+        const w = rect ? rect.width : window.innerWidth;
+        const h = rect ? rect.height : window.innerHeight;
+        sceneMgr.panCamera(dx, dy, w, h);
+      },
+      onDoubleTap: (screenX, screenY) => {
+        const rect = canvasRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const normX = ((screenX - rect.left) / rect.width) * 2 - 1;
+        const normY = -(((screenY - rect.top) / rect.height) * 2 - 1);
+        const hitBodyId = sceneMgr.raycastBody(normX, normY);
+        if (hitBodyId) {
+          setSelectedBodyId(hitBodyId);
+          selectedBodyIdRef.current = hitBodyId;
+          sceneMgr.setSelectedBody(hitBodyId);
+          sceneMgr.frameBody(hitBodyId);
+        } else {
+          sceneMgr.resetSystemView();
+        }
       },
     });
     pointerManagerRef.current = pointerMgr;
@@ -502,6 +628,47 @@ export const App: React.FC = () => {
         );
       }
 
+      // Orbital instrumentation & physical overlays (#46, #48, #49)
+      const curSelected = selectedBodyIdRef.current ? engine.bodies.find(b => b.id === selectedBodyIdRef.current) || null : null;
+      const dominantPrimary = curSelected ? findDominantPrimary(curSelected, engine.bodies) : null;
+
+      // Vector Overlay (#48): physical velocity and net gravitational acceleration
+      sceneMgr.vectorOverlay.update(curSelected, engine.bodies);
+
+      // Encounter Overlay (#46): future trajectory closest approach and collision hazards
+      const trajectoryPointsMap: Record<string, Vector3D[]> = {};
+      for (const [id, points] of Object.entries(futureTrajectoriesRef.current)) {
+        trajectoryPointsMap[id] = points.map(p => p.positionKm);
+      }
+      sceneMgr.encounterOverlay.update(selectedBodyIdRef.current, engine.bodies, trajectoryPointsMap);
+
+      // Orbital Plane Gizmo (#49): 3D disc, normal vector h = r x v, and nodal axis
+      if (curSelected && dominantPrimary) {
+        sceneMgr.orbitalPlaneGizmo.update(curSelected, dominantPrimary);
+      } else {
+        sceneMgr.orbitalPlaneGizmo.clear();
+      }
+
+      if (curSelected && dominantPrimary) {
+        const osc = calculateOsculatingElements(curSelected, dominantPrimary);
+        sceneMgr.keplerianOverlay.updateFromOsculating(osc, curSelected, dominantPrimary, deltaSec);
+        sceneMgr.orbitalBoundsOverlay.update(curSelected, dominantPrimary, osc.hillRadiusKm, osc.rocheLimitKm, deltaSec);
+        sceneMgr.lagrangeOverlay.update(curSelected, dominantPrimary, sceneMgr.camera);
+      } else if (orbitLoomRef.current?.currentFittedOrbit && orbitLoomRef.current.getPrimary()) {
+        sceneMgr.keplerianOverlay.updateFromFittedOrbit(
+          orbitLoomRef.current.currentFittedOrbit,
+          orbitLoomRef.current.getPrimary()!,
+          deltaSec
+        );
+        sceneMgr.orbitalBoundsOverlay.clear();
+        sceneMgr.lagrangeOverlay.clear();
+      } else {
+        sceneMgr.keplerianOverlay.clear();
+        sceneMgr.orbitalBoundsOverlay.clear();
+        sceneMgr.lagrangeOverlay.clear();
+      }
+
+      sceneMgr.cameraController.setBodies(engine.bodies);
       sceneMgr.update(deltaSec);
       sceneMgr.render();
 
@@ -511,6 +678,7 @@ export const App: React.FC = () => {
         setSimTimeSec(engine.timeSec);
         setEventCount(engine.events.length);
         setSystemStatus(engine.systemStatus);
+        setCameraDistance(sceneMgr.cameraDistance || 280);
         setFrameCount(f => f + 1);
 
         // Periodic future forecast update
@@ -553,6 +721,10 @@ export const App: React.FC = () => {
     const handleResize = () => {
       if (canvasRef.current) {
         sceneMgr.resize(canvasRef.current.clientWidth, canvasRef.current.clientHeight);
+        setViewportDims({
+          width: canvasRef.current.clientWidth,
+          height: canvasRef.current.clientHeight,
+        });
       }
     };
     window.addEventListener('resize', handleResize);
@@ -578,6 +750,119 @@ export const App: React.FC = () => {
       audioSynth.playTick();
     }
   };
+
+  // Keyboard Shortcuts Listener (#35, #36, #38)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+
+      const sceneMgr = sceneRef.current;
+      if (!sceneMgr) return;
+
+      // Camera History Undo / Redo (#36)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          sceneMgr.cameraController.redo();
+        } else {
+          sceneMgr.cameraController.undo();
+        }
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        sceneMgr.cameraController.redo();
+        return;
+      }
+
+      switch (e.key) {
+        case 'f':
+        case 'F':
+          e.preventDefault();
+          if (selectedBodyIdRef.current) {
+            sceneMgr.frameBody(selectedBodyIdRef.current);
+          } else {
+            sceneMgr.resetSystemView();
+          }
+          break;
+        case '0':
+          e.preventDefault();
+          sceneMgr.resetSystemView();
+          break;
+        case '+':
+        case '=':
+          e.preventDefault();
+          sceneMgr.zoomCamera(0.85);
+          break;
+        case '-':
+        case '_':
+          e.preventDefault();
+          sceneMgr.zoomCamera(1.18);
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          sceneMgr.orbitCamera(-0.06, 0);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          sceneMgr.orbitCamera(0.06, 0);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          sceneMgr.orbitCamera(0, -0.06);
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          sceneMgr.orbitCamera(0, 0.06);
+          break;
+        case ' ':
+          e.preventDefault();
+          handleTogglePause();
+          break;
+        case 'p':
+        case 'P':
+          e.preventDefault();
+          setIsPrecisionMode(prev => {
+            const next = !prev;
+            sceneMgr.cameraController.setPrecisionMode(next);
+            return next;
+          });
+          break;
+        case 'm':
+        case 'M':
+          e.preventDefault();
+          setIsMeasurementOpen(prev => !prev);
+          break;
+        case '?':
+        case '/':
+          e.preventDefault();
+          setIsHelpOpen(prev => !prev);
+          break;
+        case '1':
+          if (!e.ctrlKey && !e.metaKey && sceneMgr.cameraController.loadBookmark(1)) {
+            e.preventDefault();
+          }
+          break;
+        case '2':
+          if (!e.ctrlKey && !e.metaKey && sceneMgr.cameraController.loadBookmark(2)) {
+            e.preventDefault();
+          }
+          break;
+        case '3':
+          if (!e.ctrlKey && !e.metaKey && sceneMgr.cameraController.loadBookmark(3)) {
+            e.preventDefault();
+          }
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const handleSetTimeScale = (scale: number) => {
     if (engineRef.current) {
@@ -665,6 +950,10 @@ export const App: React.FC = () => {
     }
   };
 
+  const handlePruneRipple = (id: number) => {
+    setContactRipples(prev => prev.filter(r => r.id !== id));
+  };
+
   // Branching: Switch Branch
   const handleSwitchBranch = (id: string) => {
     if (branchManagerRef.current && engineRef.current && sceneRef.current) {
@@ -743,6 +1032,12 @@ export const App: React.FC = () => {
       // Checkpoint active branch immediately after macro consequence
       branchManagerRef.current?.checkpointActiveBranch(engineRef.current);
       sceneRef.current.syncBodies(engineRef.current.bodies);
+      if (macro.id === 'pull-starsilk') {
+        const collapsedId = targetId || ev.bodyIds?.[0];
+        if (collapsedId) {
+          sceneRef.current.playCollapseSequence(collapsedId);
+        }
+      }
       setEventCount(engineRef.current.events.length);
       setIsCanonLabOpen(false);
     }
@@ -949,32 +1244,76 @@ export const App: React.FC = () => {
           onOpenLedger={() => setIsLedgerOpen(true)}
           onOpenBranchCompare={() => setIsCompareOpen(true)}
           eventCount={eventCount}
+          events={engineRef.current?.events || []}
         />
       </div>
 
-      {/* Left Vertical Tool Rail */}
-      <ToolRail
-        activeTool={activeTool}
-        onSelectTool={(t) => {
-          setActiveTool(t);
-          audioSynth.playTick();
-        }}
-        showFuture={showFuture}
-        onToggleShowFuture={() => setShowFuture(!showFuture)}
-        showSensitivity={showSensitivity}
-        onToggleShowSensitivity={() => setShowSensitivity(!showSensitivity)}
-        isFateLensActive={isFateLensActive}
-        onToggleFateLens={handleToggleFateLens}
-        hasSelectedBody={!!selectedBodyId}
-        onOpenCreateModal={() => setIsCreateModalOpen(true)}
-        onOpenCanonLab={() => setIsCanonLabOpen(true)}
-        onResetCamera={() => {
-          if (sceneRef.current) {
-            sceneRef.current.viewMode = 'inertial';
-            sceneRef.current.cameraTarget.set(0, 0, 0);
-          }
-        }}
-      />
+        {/* Orientation Cube: Snap viewports (#40) */}
+        <OrientationCube cameraController={sceneRef.current?.cameraController || null} />
+
+        {/* Dynamic Scale Bar (#43) */}
+        <ScaleBar cameraDistance={cameraDistance} scaleMode={scaleMode} viewportHeight={viewportDims.height} />
+
+        {/* Offscreen Target Pointers (#50) */}
+        <OffscreenPointers
+          selectedBody={selectedBody}
+          sceneManager={sceneRef.current}
+          viewportWidth={viewportDims.width}
+          viewportHeight={viewportDims.height}
+          onFocusBody={(b) => {
+            setSelectedBodyId(b.id);
+            selectedBodyIdRef.current = b.id;
+            sceneRef.current?.setSelectedBody(b.id);
+            sceneRef.current?.frameBody(b.id);
+          }}
+        />
+
+        {/* Live Manipulation Telemetry (#45) */}
+        <ManipulationTelemetry stats={manipulationStats} fittedOrbit={pendingOrbit} />
+
+        {/* First-Time Gesture Coach (#35) */}
+        <GestureCoach />
+
+        {/* Left Vertical Tool Rail */}
+        <ToolRail
+          activeTool={activeTool}
+          onSelectTool={(t) => {
+            setActiveTool(t);
+            audioSynth.playTick();
+          }}
+          showFuture={showFuture}
+          onToggleShowFuture={() => setShowFuture(!showFuture)}
+          showSensitivity={showSensitivity}
+          onToggleShowSensitivity={() => setShowSensitivity(!showSensitivity)}
+          isFateLensActive={isFateLensActive}
+          onToggleFateLens={handleToggleFateLens}
+          hasSelectedBody={!!selectedBodyId}
+          onOpenCreateModal={() => setIsCreateModalOpen(true)}
+          onOpenCanonLab={() => setIsCanonLabOpen(true)}
+          onResetCamera={() => {
+            if (sceneRef.current) {
+              sceneRef.current.resetSystemView();
+            }
+          }}
+          onFrameSelected={() => {
+            if (sceneRef.current) {
+              if (selectedBodyIdRef.current) {
+                sceneRef.current.frameBody(selectedBodyIdRef.current);
+              } else {
+                sceneRef.current.resetSystemView();
+              }
+            }
+          }}
+          isPrecisionMode={isPrecisionMode}
+          onTogglePrecisionMode={() => {
+            const next = !isPrecisionMode;
+            setIsPrecisionMode(next);
+            sceneRef.current?.cameraController.setPrecisionMode(next);
+          }}
+          isMeasurementOpen={isMeasurementOpen}
+          onToggleMeasurement={() => setIsMeasurementOpen(!isMeasurementOpen)}
+          onOpenHelp={() => setIsHelpOpen(true)}
+        />
 
       {/* Orbit Loom Conic Confirmation Overlay */}
       {pendingOrbit && (
@@ -1040,6 +1379,12 @@ export const App: React.FC = () => {
         />
       )}
 
+      {/* S Pen Hover Calipers (Phase D #22) */}
+      <StylusHoverCalipers hover={stylusHover} />
+
+      {/* Canvas Tactile Contact Ripples (Phase D #25A) */}
+      <CanvasContactRipples ripples={contactRipples} onPruneRipple={handlePruneRipple} />
+
       {/* Modals */}
       {isCreateModalOpen && (
         <CreateBodyModal
@@ -1081,6 +1426,20 @@ export const App: React.FC = () => {
           onClose={() => setIsCompareOpen(false)}
         />
       )}
+
+      {/* Analytical Two-Point Measurement Tool (#44) */}
+      <MeasurementTool
+        bodies={engineRef.current?.bodies || []}
+        selectedBodyId={selectedBodyId}
+        isOpen={isMeasurementOpen}
+        onClose={() => setIsMeasurementOpen(false)}
+      />
+
+      {/* Controls & Gestures Help Modal (#35) */}
+      <ControlsHelpModal
+        isOpen={isHelpOpen}
+        onClose={() => setIsHelpOpen(false)}
+      />
     </div>
   );
 };

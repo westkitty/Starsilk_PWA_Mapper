@@ -3,6 +3,7 @@ import { CelestialBody } from '../simulation/types';
 import { formatDistance, formatMass, formatRadius, formatVelocity, formatSimTime } from '../simulation/units';
 import { calculateOsculatingElements, detectResonance } from '../simulation/orbital-mechanics';
 import { Trash2, Focus, Move, Sparkles, Eye } from 'lucide-react';
+import { ResonanceBadge } from './ResonanceBadge';
 
 interface ContextInspectorProps {
   selectedBody: CelestialBody | null;
@@ -168,6 +169,9 @@ export const ContextInspector: React.FC<ContextInspectorProps> = ({
           <span>{resonanceText}</span>
         </div>
       )}
+
+      {/* Mean-Motion Orbital Resonance Badges (#47) */}
+      <ResonanceBadge selectedBody={selectedBody} allBodies={allBodies} />
 
       {/* Tactile Properties */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

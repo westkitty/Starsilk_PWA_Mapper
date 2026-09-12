@@ -79,6 +79,7 @@ export interface CelestialBody {
   atmosphereColor?: string;
   atmosphereDensity?: number;
   surfaceSeed?: number;
+  hasAccretionDisk?: boolean; // Authored visual opt-in (defaults false; black holes do not automatically receive disks)
 
   // Starsilk & Canon metadata
   starsilkBleed?: number; // 0.0 - 1.0 (intensity of azure filament activity)

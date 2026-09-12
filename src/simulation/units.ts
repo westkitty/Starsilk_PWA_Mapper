@@ -15,6 +15,7 @@
 export const G_KM = 6.67430e-20; // km^3 / (kg * s^2)
 
 // Astronomical reference constants
+export const SPEED_OF_LIGHT_KM_S = 299792.458; // km/s
 export const KM_PER_AU = 149597870.7; // km
 export const SOLAR_MASS_KG = 1.98847e30; // kg
 export const SOLAR_RADIUS_KM = 696340; // km

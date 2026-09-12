@@ -231,6 +231,73 @@ export function detectResonance(periodA: number, periodB: number): ResonanceDete
   return null;
 }
 
+export interface DetectedResonance {
+  bodyAId: string;
+  bodyBId: string;
+  ratio: { p: number; q: number };
+  deltaPeriodFraction: number;
+}
+
+/**
+ * Multi-body Mean-Motion Orbital Resonance Detection (#47).
+ * Scans bodies orbiting the same primary for commensurabilities (1:1, 2:1, 3:2, 4:3, 5:2, 3:1).
+ */
+export function detectMeanMotionResonances(bodies: CelestialBody[]): DetectedResonance[] {
+  const results: DetectedResonance[] = [];
+  if (bodies.length < 2) return results;
+
+  const primaryGroups = new Map<string, { body: CelestialBody; periodSec: number }[]>();
+
+  for (const b of bodies) {
+    const primary = findDominantPrimary(b, bodies);
+    if (!primary) continue;
+    const osc = calculateOsculatingElements(b, primary);
+    if (osc.periodSec > 0 && Number.isFinite(osc.periodSec)) {
+      if (!primaryGroups.has(primary.id)) {
+        primaryGroups.set(primary.id, []);
+      }
+      primaryGroups.get(primary.id)!.push({ body: b, periodSec: osc.periodSec });
+    }
+  }
+
+  const candidateRatios = [
+    { p: 1, q: 1, val: 1.0 },
+    { p: 2, q: 1, val: 2.0 },
+    { p: 3, q: 2, val: 1.5 },
+    { p: 4, q: 3, val: 4 / 3 },
+    { p: 5, q: 2, val: 2.5 },
+    { p: 3, q: 1, val: 3.0 },
+  ];
+
+  for (const [, orbiters] of primaryGroups) {
+    if (orbiters.length < 2) continue;
+    for (let i = 0; i < orbiters.length; i++) {
+      for (let j = i + 1; j < orbiters.length; j++) {
+        const a = orbiters[i];
+        const b = orbiters[j];
+        const pLong = Math.max(a.periodSec, b.periodSec);
+        const pShort = Math.min(a.periodSec, b.periodSec);
+        const ratio = pLong / pShort;
+
+        for (const cand of candidateRatios) {
+          const diffFraction = Math.abs(ratio - cand.val) / cand.val;
+          if (diffFraction <= 0.035) {
+            results.push({
+              bodyAId: a.body.id,
+              bodyBId: b.body.id,
+              ratio: { p: cand.p, q: cand.q },
+              deltaPeriodFraction: diffFraction,
+            });
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  return results;
+}
+
 /**
  * Approximate Lagrange Points (L1 - L5) for a secondary body orbiting a primary in the orbital plane.
  */

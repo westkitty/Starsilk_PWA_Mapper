@@ -9,17 +9,36 @@
 
 export class AudioSynthesizer {
   private ctx: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private masterGain: GainNode | null = null;
   public isEnabled: boolean = false;
 
   private getContext(): AudioContext | null {
     if (!this.isEnabled) return null;
     if (!this.ctx && typeof AudioContext !== 'undefined') {
       this.ctx = new AudioContext();
+      this.masterGain = this.ctx.createGain();
+      this.analyser = this.ctx.createAnalyser();
+      this.analyser.fftSize = 128;
+      this.analyser.smoothingTimeConstant = 0.5;
+      this.masterGain.connect(this.analyser);
+      this.analyser.connect(this.ctx.destination);
     }
     if (this.ctx && this.ctx.state === 'suspended') {
       this.ctx.resume();
     }
     return this.ctx;
+  }
+
+  public getAnalyser(): AnalyserNode | null {
+    return this.analyser;
+  }
+
+  public getWaveformData(outputArray?: Uint8Array): Uint8Array | null {
+    if (!this.analyser) return null;
+    const arr = outputArray || new Uint8Array(this.analyser.fftSize);
+    (this.analyser as any).getByteTimeDomainData(arr);
+    return arr;
   }
 
   public toggle(): boolean {
@@ -46,7 +65,7 @@ export class AudioSynthesizer {
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.02);
 
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(this.masterGain || ctx.destination);
 
     osc.start();
     osc.stop(ctx.currentTime + 0.02);
@@ -71,7 +90,7 @@ export class AudioSynthesizer {
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4 + i * 0.04);
 
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(this.masterGain || ctx.destination);
 
       osc.start(now + i * 0.04);
       osc.stop(now + 0.4 + i * 0.04);
@@ -93,7 +112,7 @@ export class AudioSynthesizer {
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
 
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(this.masterGain || ctx.destination);
 
     osc.start();
     osc.stop(ctx.currentTime + 0.6);
@@ -114,7 +133,7 @@ export class AudioSynthesizer {
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
 
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(this.masterGain || ctx.destination);
 
     osc.start();
     osc.stop(ctx.currentTime + 0.3);
@@ -137,7 +156,7 @@ export class AudioSynthesizer {
     gain.gain.setValueAtTime(0.0, ctx.currentTime + 1.2); // Sudden void cutoff
 
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(this.masterGain || ctx.destination);
 
     osc.start();
     osc.stop(ctx.currentTime + 1.25);

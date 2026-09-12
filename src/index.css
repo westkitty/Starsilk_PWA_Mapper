@@ -1,11 +1,11 @@
-/* Starsilk System Planner Design Language */
+/* Starsilk System Planner Design Language - Cyber-Obsidian Tone */
 :root {
   --bg-void: #03050a;
-  --bg-surface: rgba(7, 19, 30, 0.88);
-  --bg-surface-raised: rgba(10, 42, 68, 0.75);
-  --bg-input: #061019;
+  --bg-surface: rgba(6, 10, 18, 0.90);
+  --bg-surface-raised: rgba(10, 22, 38, 0.85);
+  --bg-input: #040810;
   
-  --border-subtle: rgba(12, 198, 255, 0.18);
+  --border-subtle: rgba(12, 198, 255, 0.20);
   --border-focus: #0cc6ff;
   --border-crimson: rgba(168, 0, 24, 0.4);
 
@@ -21,6 +21,21 @@
   --accent-crimson: #880010;
 
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+/* Cyber-Obsidian Panels (Phase D #23) */
+.cyber-obsidian-panel {
+  background: rgba(6, 10, 18, 0.90);
+  border: 1px solid rgba(12, 198, 255, 0.22);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7), inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+@supports not (backdrop-filter: blur(12px)) {
+  .cyber-obsidian-panel {
+    background: #060b13;
+  }
 }
 
 body {
@@ -53,6 +68,7 @@ body {
   height: 100%;
   z-index: 1;
   outline: none;
+  touch-action: none;
 }
 
 /* HUD Overlay Layer */
@@ -148,10 +164,25 @@ body {
   box-shadow: 0 0 12px rgba(12, 198, 255, 0.4);
 }
 
-/* Tool Rail (Left) */
+/* Tool Rails & Responsive Thumb-Arc Controls (Phase D #21) */
 .left-tool-rail {
   position: absolute;
   top: 64px;
+  left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  z-index: 20;
+}
+
+.right-tool-rail {
+  position: absolute;
+  top: 290px;
   left: 16px;
   display: flex;
   flex-direction: column;
@@ -195,6 +226,75 @@ body {
   color: var(--accent-azure);
   background: rgba(12, 198, 255, 0.12);
   border-color: var(--accent-azure);
+}
+
+/* Tablet Landscape Thumb-Arc Layout */
+@media (hover: none) and (pointer: coarse), (max-height: 800px) and (orientation: landscape) {
+  .left-tool-rail.tool-rail-arc-left {
+    top: auto;
+    bottom: 84px;
+    left: 18px;
+    border-radius: 18px;
+    padding: 8px 6px;
+    gap: 10px;
+    background: rgba(6, 10, 18, 0.94);
+    border: 1px solid rgba(12, 198, 255, 0.32);
+    box-shadow: 0 8px 36px rgba(0, 0, 0, 0.75);
+  }
+
+  .left-tool-rail.tool-rail-arc-left button[data-thumb-index="0"] { transform: translateX(2px); }
+  .left-tool-rail.tool-rail-arc-left button[data-thumb-index="1"] { transform: translateX(10px); }
+  .left-tool-rail.tool-rail-arc-left button[data-thumb-index="2"] { transform: translateX(12px); }
+  .left-tool-rail.tool-rail-arc-left button[data-thumb-index="3"] { transform: translateX(4px); }
+
+  .right-tool-rail.tool-rail-arc-right {
+    top: auto;
+    bottom: 84px;
+    left: auto;
+    right: 18px;
+    border-radius: 18px;
+    padding: 8px 6px;
+    gap: 10px;
+    background: rgba(6, 10, 18, 0.94);
+    border: 1px solid rgba(12, 198, 255, 0.32);
+    box-shadow: 0 8px 36px rgba(0, 0, 0, 0.75);
+  }
+
+  .right-tool-rail.tool-rail-arc-right button[data-thumb-index="0"] { transform: translateX(-2px); }
+  .right-tool-rail.tool-rail-arc-right button[data-thumb-index="1"] { transform: translateX(-10px); }
+  .right-tool-rail.tool-rail-arc-right button[data-thumb-index="2"] { transform: translateX(-12px); }
+  .right-tool-rail.tool-rail-arc-right button[data-thumb-index="3"] { transform: translateX(-10px); }
+  .right-tool-rail.tool-rail-arc-right button[data-thumb-index="4"] { transform: translateX(-2px); }
+
+  .tool-button {
+    width: 48px;
+    height: 48px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* Canvas Contact Ripples (Phase D #25A) */
+@keyframes contact-ripple-expand {
+  0% {
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 0.95;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.6);
+    opacity: 0;
+  }
+}
+
+.contact-ripple-ring {
+  animation: contact-ripple-expand 130ms cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contact-ripple-ring {
+    animation: none;
+    opacity: 0.5;
+  }
 }
 
 /* Context Inspector (Right) */

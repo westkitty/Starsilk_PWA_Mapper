@@ -25,16 +25,21 @@ export interface BranchTrajectory {
 }
 
 export class FateLensRenderer {
+  public static readonly instrumentClassification = 'DIVERGENCE INTENSITY';
+  public static readonly metricType = 'ENSEMBLE DISPERSION (VARIANCE ACROSS PERTURBED TRAJECTORIES)';
+
   private group: THREE.Group;
   private scaleTransform: ScaleTransform;
   private floatingOrigin: FloatingOrigin;
 
   private isActive: boolean = false;
   private targetBodyId: string | null = null;
+  private maxDivergenceIntensity: number = 0;
 
-  // THEN visual layer
+  // THEN visual layer (Dual-chroma cyan/magenta temporal echoes)
   private thenGroup: THREE.Group;
   private echoMeshes: THREE.Mesh[] = [];
+  private chromaEchoMeshes: THREE.Mesh[] = [];
   private pastFilamentLine: THREE.Line;
   private readonly maxEchoes = 8;
   private readonly maxFilamentPoints = 128;
@@ -161,18 +166,33 @@ export class FateLensRenderer {
 
   private initEchoPool(): void {
     for (let i = 0; i < this.maxEchoes; i++) {
-      // Translucent ghost sphere in Starsilk azure
-      const mat = new THREE.MeshBasicMaterial({
+      // Primary translucent ghost sphere in Starsilk cyan (#0cc6ff)
+      const cyanMat = new THREE.MeshBasicMaterial({
         color: '#0cc6ff',
         transparent: true,
-        opacity: 0.2,
+        opacity: 0.22,
         wireframe: true,
         depthWrite: false,
       });
-      const mesh = new THREE.Mesh(this.sharedEchoSphereGeo, mat);
-      mesh.visible = false;
-      this.echoMeshes.push(mesh);
-      this.thenGroup.add(mesh);
+      const cyanMesh = new THREE.Mesh(this.sharedEchoSphereGeo, cyanMat);
+      cyanMesh.name = `echo-cyan-${i}`;
+      cyanMesh.visible = false;
+      this.echoMeshes.push(cyanMesh);
+      this.thenGroup.add(cyanMesh);
+
+      // Chromatic separation ghost sphere in subtle magenta (#ec4899)
+      const magentaMat = new THREE.MeshBasicMaterial({
+        color: '#ec4899',
+        transparent: true,
+        opacity: 0.12,
+        wireframe: true,
+        depthWrite: false,
+      });
+      const magentaMesh = new THREE.Mesh(this.sharedEchoSphereGeo, magentaMat);
+      magentaMesh.name = `echo-magenta-${i}`;
+      magentaMesh.visible = false;
+      this.chromaEchoMeshes.push(magentaMesh);
+      this.thenGroup.add(magentaMesh);
     }
   }
 
@@ -374,12 +394,22 @@ export class FateLensRenderer {
       // Suppress echo mesh if coincident with current body to prevent ghost wireframe inside planet core
       const distToCurrent = Math.hypot(dispEcho.x - dispCurrent.x, dispEcho.y - dispCurrent.y, dispEcho.z - dispCurrent.z);
       const isCoincident = distToCurrent < currentRadius * 0.75;
+      const isVisible = echoEmergence > 0.01 && !isCoincident;
+
+      // Subtle cyan/magenta chromatic spatial separation (offset by 3.5% of radius)
+      const sep = currentRadius * 0.035;
 
       const mesh = this.echoMeshes[i];
-      mesh.visible = echoEmergence > 0.01 && !isCoincident;
-      mesh.position.set(dispEcho.x, dispEcho.y, dispEcho.z);
+      mesh.visible = isVisible;
+      mesh.position.set(dispEcho.x + sep, dispEcho.y, dispEcho.z + sep);
       mesh.scale.set(sizeScale, sizeScale, sizeScale);
-      (mesh.material as THREE.MeshBasicMaterial).opacity = fade * echoEmergence;
+      (mesh.material as THREE.MeshBasicMaterial).opacity = fade * echoEmergence * 0.85;
+
+      const chromaMesh = this.chromaEchoMeshes[i];
+      chromaMesh.visible = isVisible;
+      chromaMesh.position.set(dispEcho.x - sep, dispEcho.y, dispEcho.z - sep);
+      chromaMesh.scale.set(sizeScale * 0.98, sizeScale * 0.98, sizeScale * 0.98);
+      (chromaMesh.material as THREE.MeshBasicMaterial).opacity = fade * echoEmergence * 0.45;
 
       // Spectral decay: pigment leaches from bodyColor -> azure -> deepVoidColor
       if (tRecent > 0.5) {
@@ -417,6 +447,7 @@ export class FateLensRenderer {
     // Hide remaining unused echo meshes
     for (let i = echoCount; i < this.maxEchoes; i++) {
       this.echoMeshes[i].visible = false;
+      this.chromaEchoMeshes[i].visible = false;
     }
 
     // Filament smoothly uncoils with ease
@@ -464,6 +495,36 @@ export class FateLensRenderer {
         (entry.line.material as THREE.Material).dispose();
         this.branchLines.delete(id);
       }
+    }
+
+    // Ensemble dispersion metric (DIVERGENCE INTENSITY) across multi-branch tracks
+    const ensemblePointsCount = allTracks.length > 0 ? Math.min(...allTracks.map(t => t.points.length), this.maxBranchPoints) : 0;
+    const dispersionPerStep: number[] = new Array(ensemblePointsCount).fill(0);
+
+    if (allTracks.length > 1) {
+      for (let i = 0; i < ensemblePointsCount; i++) {
+        let meanX = 0, meanY = 0, meanZ = 0;
+        for (const t of allTracks) {
+          meanX += t.points[i].x;
+          meanY += t.points[i].y;
+          meanZ += t.points[i].z;
+        }
+        meanX /= allTracks.length;
+        meanY /= allTracks.length;
+        meanZ /= allTracks.length;
+
+        let varSum = 0;
+        for (const t of allTracks) {
+          const dx = t.points[i].x - meanX;
+          const dy = t.points[i].y - meanY;
+          const dz = t.points[i].z - meanZ;
+          varSum += dx * dx + dy * dy + dz * dz;
+        }
+        dispersionPerStep[i] = Math.sqrt(varSum / allTracks.length);
+      }
+      this.maxDivergenceIntensity = Math.min(1.0, Math.max(0, ...dispersionPerStep) / 60000.0);
+    } else {
+      this.maxDivergenceIntensity = 0.0;
     }
 
     let firstDivergenceDisp: Vector3D | null = null;
@@ -518,10 +579,27 @@ export class FateLensRenderer {
           }
         }
 
+        // Divergence Intensity: color ramp from azure -> amber -> crimson based on ensemble dispersion
+        let pointColor = trackColor;
+        if (allTracks.length > 1) {
+          const dispersionKm = dispersionPerStep[i] || 0;
+          const divRatio = Math.min(1.0, dispersionKm / 60000.0); // 0 km -> 0.0, 30,000 km -> 0.5, >= 60,000 km -> 1.0
+          const azureCol = new THREE.Color('#0cc6ff');
+          const amberCol = new THREE.Color('#f59e0b');
+          const crimsonCol = new THREE.Color('#ef4444');
+          const divColor = new THREE.Color();
+          if (divRatio < 0.5) {
+            divColor.lerpColors(azureCol, amberCol, divRatio * 2.0);
+          } else {
+            divColor.lerpColors(amberCol, crimsonCol, (divRatio - 0.5) * 2.0);
+          }
+          pointColor = new THREE.Color().lerpColors(trackColor, divColor, 0.75);
+        }
+
         const alpha = baseAlpha * branchWeight;
-        colors[i * 3] = trackColor.r * alpha;
-        colors[i * 3 + 1] = trackColor.g * alpha;
-        colors[i * 3 + 2] = trackColor.b * alpha;
+        colors[i * 3] = pointColor.r * alpha;
+        colors[i * 3 + 1] = pointColor.g * alpha;
+        colors[i * 3 + 2] = pointColor.b * alpha;
       }
 
       // Smoothly unroll trajectory forward into future
@@ -590,8 +668,13 @@ export class FateLensRenderer {
     }
   }
 
+  public getDivergenceIntensity(): number {
+    return this.maxDivergenceIntensity;
+  }
+
   public clearVisuals(): void {
     for (const mesh of this.echoMeshes) mesh.visible = false;
+    for (const mesh of this.chromaEchoMeshes) mesh.visible = false;
     for (const bead of this.futureBeadMeshes) bead.visible = false;
     if (this.pastFilamentLine) {
       this.pastFilamentLine.geometry.setDrawRange(0, 0);
@@ -616,6 +699,12 @@ export class FateLensRenderer {
       this.thenGroup.remove(m);
     }
     this.echoMeshes = [];
+
+    for (const m of this.chromaEchoMeshes) {
+      (m.material as THREE.Material).dispose();
+      this.thenGroup.remove(m);
+    }
+    this.chromaEchoMeshes = [];
 
     if (this.pastFilamentLine) {
       this.pastFilamentLine.geometry.dispose();

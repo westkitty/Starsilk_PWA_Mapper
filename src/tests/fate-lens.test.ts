@@ -258,4 +258,96 @@ describe('Fate Lens Temporal Engine & Invariants', () => {
       fateRenderer.dispose();
     }).not.toThrow();
   });
+
+  it('Phase C #16: provides dual-chroma cyan and magenta separation on THEN echoes with monotonic fade', () => {
+    const scaleTransform = new ScaleTransform();
+    const floatingOrigin = new FloatingOrigin();
+    const fateRenderer = new FateLensRenderer(scaleTransform, floatingOrigin);
+
+    fateRenderer.setActive(true);
+    fateRenderer.setTargetBody('planet-1');
+
+    const body: CelestialBody = {
+      id: 'planet-1',
+      name: 'Terra',
+      type: 'planet',
+      massKg: 6e24,
+      radiusKm: 6400,
+      position: { x: 0, y: 0, z: 0 },
+      velocity: { x: 0, y: 30, z: 0 },
+      color: '#0cc6ff',
+    };
+
+    const echoes = [
+      { positionKm: { x: 10000000, y: 0, z: 0 }, velocityKmS: { x: 0, y: 30, z: 0 }, timestampSec: 10, ageSec: 2, normalizedAge: 0.2 },
+      { positionKm: { x: 20000000, y: 0, z: 0 }, velocityKmS: { x: 0, y: 30, z: 0 }, timestampSec: 8, ageSec: 4, normalizedAge: 0.8 },
+    ];
+
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+    camera.position.set(0, 0, 500);
+
+    // Update with ease = 1.0 (fully emerged)
+    fateRenderer.update(1.0, body, echoes, [], [], camera);
+
+    const thenGroup = fateRenderer.getGroup().getObjectByName('FateLens_THEN') as THREE.Group;
+    expect(thenGroup).toBeDefined();
+
+    const cyanEcho0 = thenGroup.getObjectByName('echo-cyan-0') as THREE.Mesh;
+    const magentaEcho0 = thenGroup.getObjectByName('echo-magenta-0') as THREE.Mesh;
+
+    expect(cyanEcho0).toBeDefined();
+    expect(magentaEcho0).toBeDefined();
+    expect(cyanEcho0.visible).toBe(true);
+    expect(magentaEcho0.visible).toBe(true);
+
+    // Spatial chromatic separation: positions are offset from each other
+    expect(cyanEcho0.position.x).not.toBe(magentaEcho0.position.x);
+
+    // Fade hierarchy: recent echo (0) is more opaque than older echo (1)
+    const cyanEcho1 = thenGroup.getObjectByName('echo-cyan-1') as THREE.Mesh;
+    expect(cyanEcho1.visible).toBe(true);
+    expect((cyanEcho0.material as THREE.MeshBasicMaterial).opacity).toBeGreaterThan(
+      (cyanEcho1.material as THREE.MeshBasicMaterial).opacity
+    );
+
+    fateRenderer.dispose();
+  });
+
+  it('Phase C #17: computes ensemble dispersion divergence intensity and locks classification honestly', () => {
+    expect(FateLensRenderer.instrumentClassification).toBe('DIVERGENCE INTENSITY');
+    expect(FateLensRenderer.metricType).toContain('ENSEMBLE DISPERSION');
+    expect(FateLensRenderer.instrumentClassification).not.toContain('Lyapunov');
+
+    const scaleTransform = new ScaleTransform();
+    const floatingOrigin = new FloatingOrigin();
+    const fateRenderer = new FateLensRenderer(scaleTransform, floatingOrigin);
+
+    fateRenderer.setActive(true);
+    fateRenderer.setTargetBody('planet-1');
+
+    const body: CelestialBody = {
+      id: 'planet-1',
+      name: 'Terra',
+      type: 'planet',
+      massKg: 6e24,
+      radiusKm: 6400,
+      position: { x: 0, y: 0, z: 0 },
+      velocity: { x: 0, y: 30, z: 0 },
+      color: '#0cc6ff',
+    };
+
+    const branchTracks = [
+      { branchId: 'b1', branchName: 'Branch 1', colorHex: '#0cc6ff', points: [{ x: 10000, y: 0, z: 0 }, { x: 20000, y: 0, z: 0 }] },
+      { branchId: 'b2', branchName: 'Branch 2', colorHex: '#ef4444', points: [{ x: 10000, y: 0, z: 0 }, { x: 80000, y: 60000, z: 0 }] },
+    ];
+
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+    fateRenderer.update(1.0, body, [], [], branchTracks, camera);
+
+    // Divergence intensity should reflect dispersion across branches (> 0)
+    expect(fateRenderer.getDivergenceIntensity()).toBeGreaterThan(0.2);
+
+    fateRenderer.dispose();
+  });
 });
+

@@ -2,6 +2,9 @@ import React from 'react';
 import { Play, Pause, GitFork, ListOrdered, GitCompare } from 'lucide-react';
 import { formatSimTime } from '../simulation/units';
 import { TimelineBranch } from '../branching/branch-types';
+import { ConsequenceEvent } from '../simulation/types';
+import { TimelineEventPips } from './TimelineEventPips';
+import { AudioOscilloscope } from './AudioOscilloscope';
 
 interface TimelineBarProps {
   timeSec: number;
@@ -16,6 +19,7 @@ interface TimelineBarProps {
   onOpenLedger: () => void;
   onOpenBranchCompare: () => void;
   eventCount: number;
+  events?: ConsequenceEvent[];
 }
 
 const PRESET_RATES = [1, 10, 100, 1000, 10000];
@@ -33,11 +37,26 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
   onOpenLedger,
   onOpenBranchCompare,
   eventCount,
+  events,
 }) => {
   return (
-    <footer className="bottom-timeline-bar hud-interactive">
-      {/* Time Play / Rate Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+    <footer
+      className="bottom-timeline-bar hud-interactive"
+      style={{ flexDirection: 'column', alignItems: 'stretch', padding: '6px 20px 10px', position: 'relative' }}
+    >
+      {/* Low-Profile 2px Audio Waveform Strip along top edge */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '2px', overflow: 'hidden' }}>
+        <AudioOscilloscope />
+      </div>
+
+      {/* Interactive Milestone Pips Track */}
+      {events && events.length > 0 && (
+        <TimelineEventPips events={events} currentSimTimeSec={timeSec} />
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        {/* Time Play / Rate Controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         {/* Play/Pause Button */}
         <button
           onClick={onTogglePause}
@@ -173,6 +192,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
           <ListOrdered size={14} />
           <span>LEDGER ({eventCount})</span>
         </button>
+      </div>
       </div>
     </footer>
   );

@@ -515,7 +515,7 @@ async function runBrowserValidation() {
   // Open Canon Lab
   await client.evaluate(`
     (() => {
-      const btns = Array.from(document.querySelectorAll('.left-tool-rail .tool-button'));
+      const btns = Array.from(document.querySelectorAll('.left-tool-rail .tool-button, .right-tool-rail .tool-button'));
       const canonBtn = btns.find(b => b.textContent.includes('CANON'));
       canonBtn?.click();
     })()
@@ -572,7 +572,7 @@ async function runBrowserValidation() {
   // 1. Click FATE button in ToolRail
   const fateBtnClick = await client.evaluate(`
     (() => {
-      const btns = Array.from(document.querySelectorAll('.left-tool-rail .tool-button'));
+      const btns = Array.from(document.querySelectorAll('.left-tool-rail .tool-button, .right-tool-rail .tool-button'));
       const fateBtn = btns.find(b => b.textContent.includes('FATE'));
       if (!fateBtn) return { found: false };
       fateBtn.click();
@@ -586,7 +586,7 @@ async function runBrowserValidation() {
   // 2. Audit Fate Lens state in DOM
   const fateLensAudit = await client.evaluate(`
     (() => {
-      const fateBtn = Array.from(document.querySelectorAll('.left-tool-rail .tool-button')).find(b => b.textContent.includes('FATE'));
+      const fateBtn = Array.from(document.querySelectorAll('.left-tool-rail .tool-button, .right-tool-rail .tool-button')).find(b => b.textContent.includes('FATE'));
       const fateBtnActive = fateBtn?.classList.contains('active') ?? false;
       const badge = document.querySelector('.fate-lens-badge');
       const hasBadge = !!badge;
