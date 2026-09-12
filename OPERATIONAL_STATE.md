@@ -12,110 +12,114 @@
 | **Repository Root** | `./` (`/Users/andrew/Star_System_Planner`) | Git branch: `main` |
 | **Remote Origin** | `https://github.com/westkitty/Starsilk_PWA_Mapper.git` | Canonical public GitHub target |
 | **Canon Reference** | `westkitty/Starsilk_Character_Dossier` | Verified strictly read-only |
-| **TypeScript Strict** | **0 Errors** | Last verified before repair at `35c691e`; repair CI pending |
-| **Test Suite** | **77 / 77 Passed** | Last verified before repair across 12 suites; repair adds semantic-LOD/label tests and requires fresh CI |
-| **Production Build** | **Successful** | Last verified before repair; fresh Pages-target build required for repair commit |
-| **Starfield Parallax** | **Enhanced Continuous Parallax** | 4,550 stars, continuous per-star `aParallax`, optical PSF shader, skewed magnitude power law ($P(m) \sim m^{3.2}$), natural galactic geography |
-| **Interaction & Instrumentation Program 1** | **Complete (19 Features)** | Ribbons/chevrons (#6), Kepler compass/wedge (#7), Hill/Roche (#8), Lagrange L1–L5 (#9), Newtonian potential grid (#10), Timeline pips (#20), Black hole & disk shaders (#1), Stellar corona (#2), Gas giant atmospheric shader (#4), Ring shadows (#5), Barcode starsilk ribbon (#11), Blood ring (#13), PULL STARSILK presentation (#15), THEN echoes (#16), Divergence intensity ribbon (#17), Thumb-arc controls (#21), S Pen hover calipers (#22), Cyber-obsidian panels (#23), Contact ripples (#25A), Audio oscilloscope (#25B) |
-| **Interaction & Instrumentation Program 2** | **Implemented; physical control QA pending** | #26–#41 and #43–#49 remain implemented. #42 is now correctly defined as Semantic Zoom / Visual LOD. #50 now includes both offscreen target pointers and smart collision-aware body labels. |
-| **Strict Exclusions Enforced** | **6 Items Excluded** | Absolute omission of #3, #12, #14, #18, #19, #24 |
-| **Physical Hardware QA** | **PENDING FOR CURRENT CONTROL PASS** | Prior Tab S9 Ultra evidence predates #26–#50. The #26–#50 pass had no attached ADB device, so pinch feel, S Pen/palm rejection, and current frame pacing remain physically unverified. |
+| **Verified Runtime Commit** | `94376aad5622997b2a01cfd9592073fb870dc722` | Final software repair code validated by GitHub Actions run #7 |
+| **TypeScript Strict** | **0 Errors** | GitHub Actions run #7 |
+| **Test Suite** | **81 / 81 Passed** | 13 / 13 Vitest suites passed in GitHub Actions run #7 |
+| **Production Build** | **Successful** | Pages-target Vite + Workbox PWA build passed in run #7 |
+| **GitHub Pages** | **DEPLOYED** | `build-and-verify` and `deploy` jobs both succeeded for runtime commit `94376aad…` |
+| **Starfield Parallax** | **Enhanced Continuous Parallax** | 4,550 stars, continuous per-star `aParallax`, optical PSF shader, skewed magnitude power law, natural galactic geography |
+| **Interaction & Instrumentation Program 1** | **Software Verified** | Approved first-wave visual/instrumentation work remains present and regression-covered |
+| **Interaction & Instrumentation Program 2** | **Software Verified; physical control QA pending** | #26–#50 present after correcting #42 and completing #50; real Tab S9 Ultra touch/S Pen feel still requires human/device verification |
+| **Strict Exclusions Enforced** | **6 Items Excluded** | #3, #12, #14, #18, #19, #24 remain excluded |
+| **Physical Hardware QA** | **PENDING FOR CURRENT CONTROL PASS** | Historical Tab S9 Ultra evidence predates #26–#50; current pinch/S Pen/palm/LOD/label/performance behavior is not yet physically verified |
 
 ---
 
-## 2. Verified Baseline Before Current Repair
+## 2. Final Repair Scope
 
-The immediately preceding published baseline was commit `35c691ed864895738fac345ad9b481419067a181`.
+### #42 — Semantic Zoom / Visual LOD
 
-GitHub Actions independently verified that baseline with:
+The earlier #26–#50 implementation incorrectly reported `View Mode Persistence` as item #42. The repair restores the requested semantic zoom behavior.
 
-- TypeScript: 0 errors.
-- 12 Vitest suites / 77 tests passed.
-- GitHub Pages-target production build passed.
-- GitHub Pages deployment succeeded.
+Three presentation tiers now use camera-distance hysteresis:
 
-Those results remain historical evidence for the baseline. They do **not** automatically verify the new repair commit.
+- **detail** — full fine instrumentation and richer labels;
+- **context** — core orbital context remains while fine-detail overlays reduce;
+- **system** — fine decorative/instrument overlays reduce further while body cores, trajectories, selection, Fate Lens, and essential system context remain.
 
----
+Selected-body fine detail remains visible even at system scale. Hysteresis prevents visual chatter near LOD thresholds.
 
-## 3. Current Repair Scope
+### #50 — Offscreen Navigation + Smart Labels
 
-### Corrected requirement #42 — Semantic Zoom / Visual LOD
+The existing selected-body offscreen pointer remains intact.
 
-The previous implementation report incorrectly substituted `View Mode Persistence` for requested item #42. The repair adds an actual semantic presentation hierarchy driven by camera distance with hysteresis:
+The repair adds bounded smart body labels with:
 
-- `detail` tier: full fine instrumentation and richer labels;
-- `context` tier: retains core orbital context while suppressing fine-detail overlays;
-- `system` tier: suppresses small decorative/fine orbital detail while preserving body cores, trajectories, selection, Fate Lens, and essential system context.
-
-The implementation deliberately keeps selected-body fine detail visible even at system scale.
-
-Hysteresis prevents repeated visual chatter around zoom thresholds.
-
-### Completed requirement #50 — Offscreen navigation + smart labels
-
-Existing offscreen selected-body pointers are preserved.
-
-The repair adds a separate bounded DOM smart-label layer with:
-
-- priority order: selected > hovered > primary star > special/major bodies > ordinary bodies;
-- screen-space collision avoidance;
-- bounded label counts by semantic LOD tier;
+- selected > hovered > primary > special/major > ordinary priority;
+- screen-space overlap avoidance;
+- viewport clamping;
+- tier-dependent label density limits;
 - sparse leader lines for priority labels;
-- pointer hover support for mouse/S Pen without selection mutation;
-- label updates throttled to 10 Hz and kept outside React reconciliation;
-- labels remain pointer-transparent and do not intercept canvas interaction.
+- mouse/S Pen hover emphasis without selection mutation;
+- pointer-transparent DOM labels that do not steal canvas interaction;
+- 10 Hz label updates outside React reconciliation.
 
-### Performance-conscious implementation rules
+### Render-hot-path repair
 
-- no additional `requestAnimationFrame` loop;
-- no React state update per label frame;
-- smart-label DOM nodes are reused and diffed;
-- semantic LOD hides fine 3D presentation at system distance;
-- existing enhanced starfield, trajectories, Fate Lens, camera controller, simulation, persistence, and canon semantics remain protected.
+`EncounterOverlay` previously disposed and recreated Three.js marker geometry/materials every animation frame even when the forecast had not changed.
+
+It now:
+
+- fingerprints stable forecast sample identities;
+- recomputes encounter analysis only for a genuinely changed forecast/selection;
+- reuses existing marker geometry/materials on stable frames;
+- only updates marker display positions for floating-origin/scale changes;
+- retains explicit disposal when the forecast actually changes or the overlay is cleared.
+
+This removes a known source of avoidable per-frame GPU resource churn without changing simulation semantics.
 
 ---
 
-## 4. Current Repair Files
+## 3. Changed Files in the Closure Pass
 
 - `src/rendering/scene-manager.ts`
+- `src/rendering/encounter-overlay.ts`
 - `src/ui/smart-body-labels.ts`
 - `src/tests/semantic-lod-labels.test.ts`
 - `OPERATIONAL_STATE.md`
 
+No new runtime dependency, renderer, frame loop, simulation model, or deployment architecture was introduced.
+
 ---
 
-## 5. Validation State
+## 4. Automated Verification
 
-### Locally available deterministic checks
+GitHub Actions workflow run **#7** (`34671733312`) checked out exact runtime commit:
 
-The standalone `smart-body-labels.ts` implementation was compiled with TypeScript using DOM/ES2020 libraries, and its pure semantic-LOD and label-layout functions were exercised with a bounded Node check before repository publication.
+`94376aad5622997b2a01cfd9592073fb870dc722`
 
-### Repository-wide validation
+Verified results:
 
-Fresh repository-wide proof is required after the repair commit:
+- TypeScript `tsc --noEmit`: **PASS / 0 errors**.
+- Vitest: **13 / 13 suites passed**.
+- Vitest: **81 / 81 tests passed**.
+- `src/tests/semantic-lod-labels.test.ts`: **4 / 4 passed**, covering LOD hysteresis, priority preservation, viewport/density bounds, and stable encounter-marker resource reuse.
+- Pages-target production build with `VITE_PUBLIC_BASE=/Starsilk_PWA_Mapper/`: **PASS**.
+- Workbox PWA generation: **PASS**.
+- Pages artifact upload: **PASS**.
+- GitHub Pages deploy job: **PASS**.
 
-1. GitHub Actions TypeScript typecheck.
-2. Full Vitest suite including the new semantic-LOD/label suite.
-3. Pages-target Vite/PWA build.
-4. GitHub Pages deployment.
+The main production bundle remains above Vite's 500 kB chunk advisory threshold. This is a warning, not a build failure, and no speculative code-splitting migration was introduced during this bounded repair.
 
-Do not promote this repair from `implemented-unverified` to `verified` until those checks pass.
+GitHub's dependency install also reports two moderate-severity npm audit findings. They were not changed during this repair because dependency remediation requires a separate compatibility-scoped review rather than an unsafe `npm audit fix --force`.
 
-### Physical control verification
+---
 
-The following remain deliberately `implemented-unverified` until the Samsung Galaxy Tab S9 Ultra is actually used against the repaired build:
+## 5. Physical Verification Boundary
 
-- gesture-centered pinch feel and anchor stability;
-- combined two-finger pinch + pan;
-- S Pen priority / palm rejection;
-- small-body touch picking in normal use;
-- camera inertia/near-body navigation feel;
-- semantic LOD transitions on the tablet;
-- smart-label readability/overlap behavior on the tablet;
-- current frame-pacing envelope with the complete #26–#50 feature set.
+Software/build/deployment closure is supported. Physical-control closure is deliberately still pending.
 
-Synthetic pointer events are not sufficient to mark these physical behaviors verified.
+The following require the actual Samsung Galaxy Tab S9 Ultra and real input:
+
+- gesture-centered pinch anchor stability;
+- simultaneous two-finger pan + pinch and 1→2→1 transition quality;
+- S Pen priority and accidental-palm rejection;
+- small-body finger/S Pen picking feel;
+- semantic LOD and smart-label readability during real navigation;
+- camera inertia and near-body navigation feel;
+- representative frame pacing with the complete #26–#50 feature set.
+
+Synthetic Pointer Events do not count as physical proof for these items.
 
 ---
 
@@ -126,20 +130,19 @@ Synthetic pointer events are not sufficient to mark these physical behaviors ver
 - Simulation state remains authoritative outside Three.js presentation objects.
 - Enhanced procedural starfield remains non-selectable and simulation-isolated.
 - Fate Lens remains derived presentation and must not mutate simulation state.
-- Ordinary UI remains DOM-based and accessible; world/canvas interaction remains pointer-driven.
-- GitHub Pages base-path support for `/Starsilk_PWA_Mapper/` must remain valid.
-- Excluded feature items #3, #12, #14, #18, #19, and #24 remain excluded.
-- No physical QA claim may be made for #26–#50 without a real connected device run.
+- Smart labels are presentation-only and pointer-transparent.
+- GitHub Pages base path remains `/Starsilk_PWA_Mapper/`.
+- Excluded features #3, #12, #14, #18, #19, #24 remain absent.
+- No physical QA claim may be made for the current control pass without a real connected-device run.
 
 ---
 
-## 7. Next Verification Gate
+## 7. Closure State
 
-A repair pass is considered complete only when:
+**Repository/software repair:** VERIFIED.
 
-1. the repair commit is on `main`;
-2. GitHub Actions typecheck/tests/build pass for that exact commit;
-3. GitHub Pages deploy succeeds for that exact commit;
-4. the user performs one compact physical Tab S9 Ultra control journey covering pinch/pan, pen+palm, LOD/labels, and representative frame pacing.
+**GitHub Pages deployment of runtime commit `94376aad…`:** VERIFIED.
 
-Until step 4, repository/software closure may be verified while physical-control closure remains pending.
+**Physical Tab S9 Ultra controls/performance:** PENDING USER DEVICE TEST.
+
+A compact physical test should cover four grouped areas rather than dozens of isolated checks: touch navigation, S Pen/palm behavior, semantic LOD/smart labels, and representative performance/Fate Lens behavior.
