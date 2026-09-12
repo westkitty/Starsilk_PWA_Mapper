@@ -29,7 +29,7 @@ export const ControlsHelpModal: React.FC<ControlsHelpModalProps> = ({ isOpen, on
       <div
         className="cyber-obsidian-panel"
         style={{
-          width: "480px",
+          width: "500px",
           maxWidth: "92vw",
           padding: "16px 20px",
           display: "flex",
@@ -53,10 +53,10 @@ export const ControlsHelpModal: React.FC<ControlsHelpModalProps> = ({ isOpen, on
               <Hand size={14} /> Tablet & Touch Gestures
             </div>
             <ul style={{ margin: 0, paddingLeft: "18px", color: "var(--text-secondary)", lineHeight: "1.6" }}>
-              <li><strong>1 Finger Drag:</strong> Orbit camera around target.</li>
-              <li><strong>2 Fingers Drag / Pinch:</strong> Simultaneous Pan and Focal Zoom anchored to gesture center.</li>
+              <li><strong>1 Finger Drag:</strong> Orbit camera around the active target.</li>
+              <li><strong>2 Finger Drag + Pinch:</strong> Pan and focal zoom together, anchored to the gesture midpoint.</li>
               <li><strong>Double-Tap Body:</strong> Focus and smoothly frame body.</li>
-              <li><strong>Double-Tap Empty Space:</strong> Reset system view to origin.</li>
+              <li><strong>Double-Tap Empty Space:</strong> Reset system view.</li>
             </ul>
           </div>
 
@@ -65,20 +65,22 @@ export const ControlsHelpModal: React.FC<ControlsHelpModalProps> = ({ isOpen, on
               <PenTool size={14} /> S Pen & Stylus
             </div>
             <ul style={{ margin: 0, paddingLeft: "18px", color: "var(--text-secondary)", lineHeight: "1.6" }}>
-              <li><strong>Hover:</strong> Non-mutating telemetry calipers (distance, relative speed).</li>
-              <li><strong>Orbit Loom:</strong> Sketch conic ellipses with precision.</li>
-              <li><strong>Grab & Throw:</strong> Drag bodies directly; palm rejection automatically active.</li>
+              <li><strong>Hover:</strong> Non-mutating telemetry calipers.</li>
+              <li><strong>Plain Drag:</strong> Pan when no construction/manipulation tool owns the pen.</li>
+              <li><strong>Barrel + Drag:</strong> Orbit camera where the browser exposes the S Pen barrel as the secondary button.</li>
+              <li><strong>Orbit Loom / Grab & Throw:</strong> Tool actions retain pen priority; palm rejection remains active.</li>
             </ul>
           </div>
 
           <div>
             <div style={{ fontWeight: 800, color: "#38bdf8", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-              <MousePointer size={14} /> Desktop Mouse & Keyboard Shortcuts
+              <MousePointer size={14} /> Desktop Mouse & Keyboard
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "100px 1fr", gap: "4px 8px", color: "var(--text-secondary)", marginTop: "4px" }}>
-              <code>Left Drag</code><span>Orbit camera</span>
-              <code>Right / Mid</code><span>Pan camera plane</span>
-              <code>Wheel Zoom</code><span>Focal zoom anchored to cursor position</span>
+            <div style={{ display: "grid", gridTemplateColumns: "128px 1fr", gap: "4px 8px", color: "var(--text-secondary)", marginTop: "4px" }}>
+              <code>Left Drag</code><span>Pan after the click/drag threshold (Parable hand-feel grammar)</span>
+              <code>Middle Drag</code><span>Orbit camera</span>
+              <code>Shift/Alt + Left</code><span>Orbit fallback</span>
+              <code>Wheel / Pinch</code><span>Focal zoom anchored to cursor position</span>
               <code>F</code><span>Frame selected body</span>
               <code>0</code><span>Reset view to system center</span>
               <code>+ / -</code><span>Zoom in / Zoom out</span>

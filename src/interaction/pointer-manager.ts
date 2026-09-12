@@ -1,29 +1,36 @@
 /**
- * Tablet & Pointer Interaction Manager & Gesture State Machine (#26–#35).
- * 
- * Capabilities:
- * - #26: Focal-point pinch zoom with gesture midpoint tracking
- * - #28: Explicit Gesture State Machine (idle, tap_candidate, camera_orbit, two_finger_nav, body_drag, orbit_draw, pen_hover)
- * - #29: S Pen priority & application-level palm rejection
- * - #31: Double-tap / double-click detection (body focus / system reset)
- * - #34: Desktop trackpad pinch + cursor-centered wheel zoom + middle/right drag pan
+ * Unified pointer and gesture router for desktop, touch, and S Pen navigation.
+ *
+ * Desktop navigation follows the proven Parable hand-feel grammar:
+ * - plain LMB drag -> pan after a 10 px click/drag threshold
+ * - MMB drag -> orbit
+ * - Shift+LMB or Alt+LMB -> orbit fallback
+ * - wheel / trackpad pinch -> cursor-centered zoom
+ *
+ * Tablet navigation keeps the established Starsilk contract:
+ * - one finger -> orbit after touch slop
+ * - two fingers -> focal pinch zoom + simultaneous pan
+ * - S Pen -> hover/construct/manipulate when a tool owns the pointer; otherwise
+ *   plain pen drag pans and barrel-button drag orbits
+ * - recent pen activity suppresses likely palm contacts
  */
 
-export type PointerToolMode = "select" | "grab_throw" | "orbit_loom" | "create";
+export type PointerToolMode = 'select' | 'grab_throw' | 'orbit_loom' | 'create';
 
 export type GestureState =
-  | "idle"
-  | "tap_candidate"
-  | "camera_orbit"
-  | "two_finger_navigation"
-  | "body_drag"
-  | "orbit_draw"
-  | "pen_hover"
-  | "precision_navigation";
+  | 'idle'
+  | 'tap_candidate'
+  | 'camera_pan'
+  | 'camera_orbit'
+  | 'two_finger_navigation'
+  | 'body_drag'
+  | 'orbit_draw'
+  | 'pen_hover'
+  | 'precision_navigation';
 
 export interface NormalizedPointerEvent {
   pointerId: number;
-  pointerType: "mouse" | "pen" | "touch";
+  pointerType: 'mouse' | 'pen' | 'touch';
   clientX: number;
   clientY: number;
   deltaX: number;
@@ -41,151 +48,203 @@ export interface PointerCallbacks {
   onPointerLeave?: () => void;
   onPinchZoom: (factor: number, center: { x: number; y: number }) => void;
   onTwoFingerPan: (dx: number, dy: number) => void;
-  onDoubleTap?: (screenX: number, screenY: number, pointerType: "mouse" | "pen" | "touch") => void;
+  onDoubleTap?: (screenX: number, screenY: number, pointerType: 'mouse' | 'pen' | 'touch') => void;
   onGestureStateChange?: (state: GestureState) => void;
+}
+
+export type NavigationPressMode = 'pan_candidate' | 'orbit' | 'touch_orbit' | 'tool_or_click' | 'none';
+
+const PARABLE_MOUSE_DRAG_THRESHOLD_PX = 10;
+const TOUCH_SLOP_PX = 8;
+const PEN_SLOP_PX = 5;
+const PARABLE_ORBIT_DELTA_SCALE = 0.6;
+
+export function resolveNavigationPressMode(
+  pointerType: 'mouse' | 'pen' | 'touch',
+  button: number,
+  buttons: number,
+  altKey: boolean,
+  shiftKey: boolean
+): NavigationPressMode {
+  if (pointerType === 'touch') return 'touch_orbit';
+
+  if (pointerType === 'mouse') {
+    if (button === 1 || (button === 0 && (altKey || shiftKey))) return 'orbit';
+    if (button === 0) return 'pan_candidate';
+    return 'tool_or_click';
+  }
+
+  if (button === 2 || (buttons & 2) !== 0) return 'orbit';
+  if (button === 0) return 'pan_candidate';
+  return 'tool_or_click';
+}
+
+export function wheelDeltaToZoomFactor(deltaY: number, deltaMode: number = 0, ctrlKey: boolean = false): number {
+  if (!Number.isFinite(deltaY) || deltaY === 0) return 1;
+
+  let pixels = deltaY;
+  if (deltaMode === 1) pixels *= 16;
+  if (deltaMode === 2) pixels *= 800;
+
+  const bounded = Math.max(-180, Math.min(180, pixels));
+  const gain = ctrlKey ? 0.0042 : 0.0018;
+  return Math.exp(bounded * gain);
 }
 
 export class PointerManager {
   private element: HTMLElement;
   private callbacks: PointerCallbacks;
 
-  // Active pointers tracker
   private activePointers: Map<number, NormalizedPointerEvent> = new Map();
   private prevPositions: Map<number, { clientX: number; clientY: number }> = new Map();
   private startPositions: Map<number, { clientX: number; clientY: number; time: number }> = new Map();
+  private navigationModes: Map<number, NavigationPressMode> = new Map();
 
-  // Multi-touch tracking (#26)
   private prevPinchDistance: number | null = null;
   private prevPinchCenter: { x: number; y: number } | null = null;
 
-  // Gesture State Machine (#28)
-  public currentState: GestureState = "idle";
-  private touchSlopPx: number = 8; // Slop threshold for touch
-  private penSlopPx: number = 4;   // Tighter threshold for pen/mouse
+  public currentState: GestureState = 'idle';
 
-  // S Pen priority & palm rejection (#29)
   private activePenId: number | null = null;
-  private lastPenActiveTime: number = 0;
-  private palmRejectionRadiusPx: number = 110;
+  private lastPenActiveTime = 0;
+  private palmRejectionRadiusPx = 110;
 
-  // Double tap tracking (#31)
-  private lastTapInfo: { x: number; y: number; time: number; pointerType: "mouse" | "pen" | "touch" } | null = null;
+  private lastTapInfo: { x: number; y: number; time: number; pointerType: 'mouse' | 'pen' | 'touch' } | null = null;
 
-  // Manipulation flags
-  public isManipulatingObject: boolean = false;
-  public isDrawingOrbit: boolean = false;
+  public isManipulatingObject = false;
+  public isDrawingOrbit = false;
+
+  private previousTouchAction: string;
+  private previousUserSelect: string;
+  private previousOverscrollBehavior: string;
 
   constructor(element: HTMLElement, callbacks: PointerCallbacks) {
     this.element = element;
     this.callbacks = callbacks;
+
+    this.previousTouchAction = element.style.touchAction;
+    this.previousUserSelect = element.style.userSelect;
+    this.previousOverscrollBehavior = element.style.overscrollBehavior;
+    element.style.touchAction = 'none';
+    element.style.userSelect = 'none';
+    element.style.overscrollBehavior = 'none';
+
     this.bindEvents();
   }
 
   private bindEvents(): void {
-    this.element.addEventListener("pointerdown", this.handlePointerDown);
-    this.element.addEventListener("pointermove", this.handlePointerMove);
-    this.element.addEventListener("pointerup", this.handlePointerUp);
-    this.element.addEventListener("pointercancel", this.handlePointerCancel);
-    this.element.addEventListener("pointerleave", this.handlePointerLeave);
-    this.element.addEventListener("wheel", this.handleWheel, { passive: false });
-    this.element.addEventListener("contextmenu", this.handleContextMenu);
+    this.element.addEventListener('pointerdown', this.handlePointerDown);
+    this.element.addEventListener('pointermove', this.handlePointerMove);
+    this.element.addEventListener('pointerup', this.handlePointerUp);
+    this.element.addEventListener('pointercancel', this.handlePointerCancel);
+    this.element.addEventListener('pointerleave', this.handlePointerLeave);
+    this.element.addEventListener('wheel', this.handleWheel, { passive: false });
+    this.element.addEventListener('contextmenu', this.handleContextMenu);
   }
 
   public destroy(): void {
-    this.element.removeEventListener("pointerdown", this.handlePointerDown);
-    this.element.removeEventListener("pointermove", this.handlePointerMove);
-    this.element.removeEventListener("pointerup", this.handlePointerUp);
-    this.element.removeEventListener("pointercancel", this.handlePointerCancel);
-    this.element.removeEventListener("pointerleave", this.handlePointerLeave);
-    this.element.removeEventListener("wheel", this.handleWheel);
-    this.element.removeEventListener("contextmenu", this.handleContextMenu);
+    this.element.removeEventListener('pointerdown', this.handlePointerDown);
+    this.element.removeEventListener('pointermove', this.handlePointerMove);
+    this.element.removeEventListener('pointerup', this.handlePointerUp);
+    this.element.removeEventListener('pointercancel', this.handlePointerCancel);
+    this.element.removeEventListener('pointerleave', this.handlePointerLeave);
+    this.element.removeEventListener('wheel', this.handleWheel);
+    this.element.removeEventListener('contextmenu', this.handleContextMenu);
+
+    this.element.style.touchAction = this.previousTouchAction;
+    this.element.style.userSelect = this.previousUserSelect;
+    this.element.style.overscrollBehavior = this.previousOverscrollBehavior;
   }
 
   private handleContextMenu = (e: MouseEvent): void => {
-    // Prevent default browser context menu on canvas so right-drag pan works smoothly
     e.preventDefault();
   };
 
   private setState(newState: GestureState): void {
-    if (this.currentState !== newState) {
-      this.currentState = newState;
-      this.callbacks.onGestureStateChange?.(newState);
-    }
+    if (this.currentState === newState) return;
+    this.currentState = newState;
+    this.callbacks.onGestureStateChange?.(newState);
   }
 
-  private normalize(e: PointerEvent, deltaX: number = 0, deltaY: number = 0): NormalizedPointerEvent {
+  private normalize(e: PointerEvent, deltaX = 0, deltaY = 0, buttonsOverride?: number): NormalizedPointerEvent {
+    const rawEvent = buttonsOverride === undefined
+      ? e
+      : ({
+          buttons: buttonsOverride,
+          button: e.button,
+          altKey: e.altKey,
+          shiftKey: e.shiftKey,
+          ctrlKey: e.ctrlKey,
+          metaKey: e.metaKey,
+        } as PointerEvent);
+
     return {
       pointerId: e.pointerId,
-      pointerType: e.pointerType as "mouse" | "pen" | "touch",
+      pointerType: e.pointerType as 'mouse' | 'pen' | 'touch',
       clientX: e.clientX,
       clientY: e.clientY,
       deltaX,
       deltaY,
       pressure: e.pressure,
       isPrimary: e.isPrimary,
-      rawEvent: e,
+      rawEvent,
     };
+  }
+
+  private slopFor(pointerType: string): number {
+    if (pointerType === 'mouse') return PARABLE_MOUSE_DRAG_THRESHOLD_PX;
+    if (pointerType === 'pen') return PEN_SLOP_PX;
+    return TOUCH_SLOP_PX;
   }
 
   public getActivePointerCount(): number {
     return this.activePointers.size;
   }
 
-  // ==========================================
-  // #29 S PEN PRIORITY & PALM REJECTION
-  // ==========================================
-
   private isPalmContact(e: PointerEvent): boolean {
-    if (e.pointerType !== "touch") return false;
+    if (e.pointerType !== 'touch') return false;
 
     const now = performance.now();
-    const isPenRecent = (this.activePenId !== null) || (now - this.lastPenActiveTime < 350);
-
+    const isPenRecent = this.activePenId !== null || now - this.lastPenActiveTime < 350;
     if (!isPenRecent) return false;
 
-    // Check contact geometry: palm contacts typically have large contact radius
-    const radiusX = (e as any).radiusX || 0;
-    const radiusY = (e as any).radiusY || 0;
+    const radiusX = (e as PointerEvent & { radiusX?: number }).radiusX || 0;
+    const radiusY = (e as PointerEvent & { radiusY?: number }).radiusY || 0;
     const isLargeContact = radiusX > 22 || radiusY > 22 || e.width > 35 || e.height > 35;
 
-    // Check distance to active pen position
     if (this.activePenId !== null) {
       const penPos = this.prevPositions.get(this.activePenId);
       if (penPos) {
         const distToPen = Math.hypot(e.clientX - penPos.clientX, e.clientY - penPos.clientY);
-        if (distToPen < this.palmRejectionRadiusPx) {
-          return true; // Accidental palm resting near pen nib
-        }
+        if (distToPen < this.palmRejectionRadiusPx) return true;
       }
     }
 
     return isLargeContact;
   }
 
-  // ==========================================
-  // POINTER DOWN
-  // ==========================================
-
   private handlePointerDown = (e: PointerEvent): void => {
-    if (e.pointerType === "pen") {
+    if (e.pointerType === 'pen') {
       this.activePenId = e.pointerId;
       this.lastPenActiveTime = performance.now();
     } else if (this.isPalmContact(e)) {
-      // Suppress accidental palm touchdown
       return;
     }
 
+    const pointerType = e.pointerType as 'mouse' | 'pen' | 'touch';
+    const mode = resolveNavigationPressMode(pointerType, e.button, e.buttons, e.altKey, e.shiftKey);
+
     this.prevPositions.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
     this.startPositions.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY, time: performance.now() });
+    this.navigationModes.set(e.pointerId, mode);
 
-    const norm = this.normalize(e, 0, 0);
+    const norm = this.normalize(e);
     this.activePointers.set(e.pointerId, norm);
 
     try {
       this.element.setPointerCapture(e.pointerId);
     } catch {}
 
-    // Multi-touch transition (2 fingers) -> Two-finger navigation (#26)
     if (this.activePointers.size === 2) {
       if (this.isDrawingOrbit || this.isManipulatingObject) {
         this.isDrawingOrbit = false;
@@ -193,41 +252,36 @@ export class PointerManager {
         this.callbacks.onPointerCancel(norm);
       }
 
-      this.setState("two_finger_navigation");
-      const pts = Array.from(this.activePointers.values());
-      const dist = Math.hypot(pts[0].clientX - pts[1].clientX, pts[0].clientY - pts[1].clientY);
-      this.prevPinchDistance = Math.max(dist, 1.0);
-      this.prevPinchCenter = {
-        x: (pts[0].clientX + pts[1].clientX) / 2,
-        y: (pts[0].clientY + pts[1].clientY) / 2,
-      };
+      this.setState('two_finger_navigation');
+      this.seedPinchState();
       return;
     }
 
-    if (this.activePointers.size === 1) {
-      this.setState("tap_candidate");
+    if (mode === 'orbit') {
+      this.setState('camera_orbit');
+      return;
     }
 
+    this.setState('tap_candidate');
     this.callbacks.onPointerDown(norm);
+
+    if (this.isDrawingOrbit) this.navigationModes.set(e.pointerId, 'tool_or_click');
+    if (this.isManipulatingObject) this.navigationModes.set(e.pointerId, 'tool_or_click');
   };
 
-  // ==========================================
-  // POINTER MOVE
-  // ==========================================
-
   private handlePointerMove = (e: PointerEvent): void => {
-    if (e.pointerType === "pen") {
+    if (e.pointerType === 'pen') {
       this.lastPenActiveTime = performance.now();
-      if (e.buttons === 0) {
-        this.setState("pen_hover");
+      if (e.buttons === 0 && !this.activePointers.has(e.pointerId)) {
+        this.setState('pen_hover');
       }
     } else if (this.isPalmContact(e)) {
       return;
     }
 
     const prev = this.prevPositions.get(e.pointerId);
-    const deltaX = prev ? e.clientX - prev.clientX : (e.movementX || 0);
-    const deltaY = prev ? e.clientY - prev.clientY : (e.movementY || 0);
+    const deltaX = prev ? e.clientX - prev.clientX : e.movementX || 0;
+    const deltaY = prev ? e.clientY - prev.clientY : e.movementY || 0;
     this.prevPositions.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
 
     const norm = this.normalize(e, deltaX, deltaY);
@@ -235,9 +289,8 @@ export class PointerManager {
       this.activePointers.set(e.pointerId, norm);
     }
 
-    // Two-finger pinch zoom & pan (#26)
     if (this.activePointers.size === 2 && !this.isManipulatingObject && !this.isDrawingOrbit) {
-      this.setState("two_finger_navigation");
+      this.setState('two_finger_navigation');
       const pts = Array.from(this.activePointers.values());
       const dist = Math.hypot(pts[0].clientX - pts[1].clientX, pts[0].clientY - pts[1].clientY);
       const center = {
@@ -245,46 +298,63 @@ export class PointerManager {
         y: (pts[0].clientY + pts[1].clientY) / 2,
       };
 
-      if (this.prevPinchDistance && this.prevPinchDistance > 1.0 && dist > 1.0) {
+      if (this.prevPinchDistance && this.prevPinchDistance > 1 && dist > 1) {
         const factor = this.prevPinchDistance / dist;
-        this.callbacks.onPinchZoom(factor, center);
+        if (Number.isFinite(factor) && factor > 0) this.callbacks.onPinchZoom(factor, center);
       }
 
       if (this.prevPinchCenter) {
-        const dx = center.x - this.prevPinchCenter.x;
-        const dy = center.y - this.prevPinchCenter.y;
-        this.callbacks.onTwoFingerPan(dx, dy);
+        this.callbacks.onTwoFingerPan(center.x - this.prevPinchCenter.x, center.y - this.prevPinchCenter.y);
       }
 
-      this.prevPinchDistance = dist;
+      this.prevPinchDistance = Math.max(dist, 1);
       this.prevPinchCenter = center;
       return;
     }
 
-    // Single pointer gesture slop evaluation (#28)
-    if (this.currentState === "tap_candidate") {
-      const start = this.startPositions.get(e.pointerId);
-      if (start) {
-        const distMoved = Math.hypot(e.clientX - start.clientX, e.clientY - start.clientY);
-        const slop = e.pointerType === "touch" ? this.touchSlopPx : this.penSlopPx;
-        if (distMoved > slop) {
-          if (this.isDrawingOrbit) {
-            this.setState("orbit_draw");
-          } else if (this.isManipulatingObject) {
-            this.setState("body_drag");
-          } else {
-            this.setState("camera_orbit");
-          }
-        }
+    const mode = this.navigationModes.get(e.pointerId);
+
+    if (!this.activePointers.has(e.pointerId)) {
+      this.callbacks.onPointerMove(norm);
+      return;
+    }
+
+    if (mode === 'orbit') {
+      this.setState('camera_orbit');
+      this.callbacks.onPointerMove(
+        this.normalize(e, deltaX * PARABLE_ORBIT_DELTA_SCALE, deltaY * PARABLE_ORBIT_DELTA_SCALE, 1)
+      );
+      return;
+    }
+
+    if (this.isDrawingOrbit || this.isManipulatingObject || mode === 'tool_or_click') {
+      this.setState(this.isDrawingOrbit ? 'orbit_draw' : this.isManipulatingObject ? 'body_drag' : 'tap_candidate');
+      this.callbacks.onPointerMove(norm);
+      return;
+    }
+
+    const start = this.startPositions.get(e.pointerId);
+    const moved = start ? Math.hypot(e.clientX - start.clientX, e.clientY - start.clientY) : 0;
+    const slop = this.slopFor(e.pointerType);
+
+    if (mode === 'pan_candidate') {
+      if (moved >= slop) this.setState('camera_pan');
+      if (this.currentState === 'camera_pan') {
+        this.callbacks.onTwoFingerPan(deltaX, deltaY);
       }
+      return;
+    }
+
+    if (mode === 'touch_orbit') {
+      if (moved >= slop) this.setState('camera_orbit');
+      if (this.currentState === 'camera_orbit') {
+        this.callbacks.onPointerMove(norm);
+      }
+      return;
     }
 
     this.callbacks.onPointerMove(norm);
   };
-
-  // ==========================================
-  // POINTER UP
-  // ==========================================
 
   private handlePointerUp = (e: PointerEvent): void => {
     if (e.pointerId === this.activePenId) {
@@ -295,98 +365,113 @@ export class PointerManager {
     const prev = this.prevPositions.get(e.pointerId);
     const deltaX = prev ? e.clientX - prev.clientX : 0;
     const deltaY = prev ? e.clientY - prev.clientY : 0;
-
     const start = this.startPositions.get(e.pointerId);
-    this.prevPositions.delete(e.pointerId);
-    this.startPositions.delete(e.pointerId);
+    const stateBeforeRelease = this.currentState;
 
     const norm = this.normalize(e, deltaX, deltaY);
+
     this.activePointers.delete(e.pointerId);
+    this.prevPositions.delete(e.pointerId);
+    this.startPositions.delete(e.pointerId);
+    this.navigationModes.delete(e.pointerId);
 
     try {
       this.element.releasePointerCapture(e.pointerId);
     } catch {}
 
-    // Evaluate Tap / Double-tap (#31)
-    if (start && this.currentState === "tap_candidate") {
+    if (start && stateBeforeRelease === 'tap_candidate') {
       const dist = Math.hypot(e.clientX - start.clientX, e.clientY - start.clientY);
-      const slop = e.pointerType === "touch" ? this.touchSlopPx : this.penSlopPx;
       const duration = performance.now() - start.time;
-
-      if (dist <= slop && duration < 400) {
+      if (dist <= this.slopFor(e.pointerType) && duration < 400) {
         const now = performance.now();
+        const pointerType = e.pointerType as 'mouse' | 'pen' | 'touch';
         if (
           this.lastTapInfo &&
           now - this.lastTapInfo.time < 350 &&
           Math.hypot(e.clientX - this.lastTapInfo.x, e.clientY - this.lastTapInfo.y) < 24
         ) {
-          // Double-tap detected!
-          this.callbacks.onDoubleTap?.(e.clientX, e.clientY, e.pointerType as any);
+          this.callbacks.onDoubleTap?.(e.clientX, e.clientY, pointerType);
           this.lastTapInfo = null;
         } else {
-          this.lastTapInfo = { x: e.clientX, y: e.clientY, time: now, pointerType: e.pointerType as any };
+          this.lastTapInfo = { x: e.clientX, y: e.clientY, time: now, pointerType };
         }
       }
     }
 
+    this.callbacks.onPointerUp(norm);
+
     if (this.activePointers.size === 0) {
       this.prevPinchDistance = null;
       this.prevPinchCenter = null;
-      this.setState("idle");
-    } else if (this.activePointers.size === 1) {
+      this.setState('idle');
+      return;
+    }
+
+    if (this.activePointers.size === 1) {
+      const [remainingId, remaining] = Array.from(this.activePointers.entries())[0];
       this.prevPinchDistance = null;
       this.prevPinchCenter = null;
-      this.setState("camera_orbit");
+      this.startPositions.set(remainingId, {
+        clientX: remaining.clientX,
+        clientY: remaining.clientY,
+        time: performance.now(),
+      });
+      this.prevPositions.set(remainingId, { clientX: remaining.clientX, clientY: remaining.clientY });
+      this.navigationModes.set(
+        remainingId,
+        remaining.pointerType === 'touch' ? 'touch_orbit' : 'pan_candidate'
+      );
+      this.setState('tap_candidate');
     }
-
-    this.callbacks.onPointerUp(norm);
   };
 
-  // ==========================================
-  // POINTER CANCEL
-  // ==========================================
-
   private handlePointerCancel = (e: PointerEvent): void => {
-    if (e.pointerId === this.activePenId) {
-      this.activePenId = null;
-    }
+    if (e.pointerId === this.activePenId) this.activePenId = null;
+
     this.prevPositions.delete(e.pointerId);
     this.startPositions.delete(e.pointerId);
-    const norm = this.normalize(e, 0, 0);
+    this.navigationModes.delete(e.pointerId);
+    const norm = this.normalize(e);
     this.activePointers.delete(e.pointerId);
 
     if (this.activePointers.size === 0) {
       this.prevPinchDistance = null;
       this.prevPinchCenter = null;
-      this.setState("idle");
+      this.setState('idle');
     }
 
     this.callbacks.onPointerCancel(norm);
   };
 
   private handlePointerLeave = (): void => {
-    if (this.activePointers.size === 0) {
-      this.setState("idle");
-    }
+    if (this.activePointers.size === 0) this.setState('idle');
     this.callbacks.onPointerLeave?.();
   };
 
-  // ==========================================
-  // #34 DESKTOP TRACKPAD & MOUSE WHEEL ZOOM
-  // ==========================================
+  private seedPinchState(): void {
+    const pts = Array.from(this.activePointers.values());
+    if (pts.length !== 2) {
+      this.prevPinchDistance = null;
+      this.prevPinchCenter = null;
+      return;
+    }
+
+    this.prevPinchDistance = Math.max(
+      Math.hypot(pts[0].clientX - pts[1].clientX, pts[0].clientY - pts[1].clientY),
+      1
+    );
+    this.prevPinchCenter = {
+      x: (pts[0].clientX + pts[1].clientX) / 2,
+      y: (pts[0].clientY + pts[1].clientY) / 2,
+    };
+  }
 
   private handleWheel = (e: WheelEvent): void => {
     e.preventDefault();
+    if (this.isDrawingOrbit || this.isManipulatingObject) return;
 
-    let factor = 1.0;
-    if (e.ctrlKey) {
-      // Trackpad pinch gesture (macOS / Windows Chrome generates wheel + ctrlKey)
-      factor = Math.exp(e.deltaY * -0.01);
-    } else {
-      // Mouse wheel stepped notch
-      factor = e.deltaY > 0 ? 1.14 : 0.88;
-    }
-
+    const factor = wheelDeltaToZoomFactor(e.deltaY, e.deltaMode, e.ctrlKey);
+    if (factor === 1) return;
     this.callbacks.onPinchZoom(factor, { x: e.clientX, y: e.clientY });
   };
 }
