@@ -1,14 +1,8 @@
 /**
  * Master Scene Manager and Three.js Render Pipeline.
- * 
- * Orchestrates:
- * - High-DPR Three.js WebGLRenderer with tone mapping
- * - Dynamic mesh lifecycle for celestial bodies (stars, black holes, planets, rings, stations)
- * - Asteroid belts via InstancedMesh
- * - Trajectory prediction and sensitivity cloud
- * - Newtonian gravity potential grid
- * - Smooth camera navigation (orbit, pan, pinch zoom, focus transitions)
- * - Independent requestAnimationFrame render loop
+ *
+ * Orchestrates the renderer, celestial presentation, camera/navigation,
+ * orbital instrumentation, semantic zoom, and non-mutating smart labels.
  */
 
 import * as THREE from 'three';
@@ -38,6 +32,13 @@ import { PivotIndicator } from './pivot-indicator';
 import { VectorOverlay } from './vector-overlay';
 import { EncounterOverlay } from './encounter-overlay';
 import { OrbitalPlaneGizmo } from './orbital-plane-gizmo';
+import {
+  SmartBodyLabels,
+  SmartLabelCandidate,
+  SemanticLodTier,
+  layoutSmartLabels,
+  resolveSemanticLod,
+} from '../ui/smart-body-labels';
 
 export type CameraViewMode = 'inertial' | 'focus_selected' | 'follow_selected' | 'top_down';
 
@@ -61,12 +62,11 @@ export class SceneManager {
   public vectorOverlay: VectorOverlay;
   public encounterOverlay: EncounterOverlay;
   public orbitalPlaneGizmo: OrbitalPlaneGizmo;
+  public smartBodyLabels: SmartBodyLabels;
 
-
-  // Visual mesh dictionary keyed by body ID
   private bodyMeshes: Map<string, THREE.Group> = new Map();
+  private latestBodies: CelestialBody[] = [];
 
-  // Camera state & damping
   public viewMode: CameraViewMode = 'inertial';
   public selectedBodyId: string | null = null;
   public cameraTarget = new THREE.Vector3(0, 0, 0);
@@ -75,20 +75,43 @@ export class SceneManager {
   private cameraSpherical = new THREE.Spherical(250, Math.PI / 3, Math.PI / 4);
 
   private clock = new THREE.Clock();
+  private semanticLodTier: SemanticLodTier = 'detail';
+  private labelUpdateAccumulator = 0;
+  private readonly labelUpdateIntervalSec = 0.1;
+  private hoveredBodyId: string | null = null;
+  private projectionScratch = new THREE.Vector3();
+
+  private handleLabelPointerMove = (e: PointerEvent): void => {
+    if (e.pointerType === 'touch') {
+      this.hoveredBodyId = null;
+      return;
+    }
+    if (e.buttons !== 0) return;
+
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    const ndcY = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+    const tolerance = e.pointerType === 'pen' ? 14 : 18;
+    this.hoveredBodyId = this.findHoverBodyAtNdc(ndcX, ndcY, tolerance);
+  };
+
+  private handleLabelPointerLeave = (): void => {
+    this.hoveredBodyId = null;
+  };
 
   constructor(canvas: HTMLCanvasElement) {
     this.floatingOrigin = new FloatingOrigin();
     this.scaleTransform = new ScaleTransform();
 
-    // Scene
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#03050a');
 
-    // Camera
     const aspect = canvas.clientWidth / canvas.clientHeight;
     this.camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 50000);
     this.cameraController = new CameraController(this.camera);
     this.cameraTarget = this.cameraController.target;
+
     this.pivotIndicator = new PivotIndicator();
     this.scene.add(this.pivotIndicator.getGroup());
     this.vectorOverlay = new VectorOverlay(this.scaleTransform, this.floatingOrigin);
@@ -99,7 +122,6 @@ export class SceneManager {
     this.scene.add(this.orbitalPlaneGizmo.getGroup());
     this.updateCameraPosition();
 
-    // Renderer
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
@@ -110,11 +132,13 @@ export class SceneManager {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
 
-    // Lighting
+    this.smartBodyLabels = new SmartBodyLabels(canvas);
+    canvas.addEventListener('pointermove', this.handleLabelPointerMove, { passive: true });
+    canvas.addEventListener('pointerleave', this.handleLabelPointerLeave);
+
     const ambient = new THREE.AmbientLight('#111827', 0.8);
     this.scene.add(ambient);
 
-    // Trajectory renderer (wide-line ribbons + chevrons)
     this.trajectoryRenderer = new TrajectoryRenderer(
       this.scaleTransform,
       canvas.clientWidth || 1280,
@@ -122,51 +146,44 @@ export class SceneManager {
     );
     this.scene.add(this.trajectoryRenderer.getGroup());
 
-    // Keplerian drafting compass & equal-area wedge overlay
     this.keplerianOverlay = new KeplerianOverlay(this.scaleTransform, this.floatingOrigin);
     this.scene.add(this.keplerianOverlay.getGroup());
 
-    // Hill sphere and Roche limit overlays
     this.orbitalBoundsOverlay = new OrbitalBoundsOverlay(this.scaleTransform, this.floatingOrigin);
     this.scene.add(this.orbitalBoundsOverlay.getGroup());
 
-    // L1–L5 Lagrange points overlay
     this.lagrangeOverlay = new LagrangeOverlay(this.scaleTransform, this.floatingOrigin);
     this.scene.add(this.lagrangeOverlay.getGroup());
 
-    // Gravity field
     this.gravityGrid = new GravityGridRenderer(this.scaleTransform);
     this.scene.add(this.gravityGrid.getMesh());
 
-    // Fate Lens renderer (THEN -> NOW -> POSSIBLE)
     this.fateLensRenderer = new FateLensRenderer(this.scaleTransform, this.floatingOrigin);
     this.scene.add(this.fateLensRenderer.getGroup());
 
-    // Background starfield with camera parallax
     this.starfieldRenderer = new StarfieldRenderer(this.renderer.getPixelRatio());
     this.scene.add(this.starfieldRenderer.getGroup());
     this.starfieldRenderer.update(this.camera);
 
-    // Collapse presentation sequence (Phase B #15)
     this.collapsePresentation = new CollapsePresentation();
     this.scene.add(this.collapsePresentation.getGroup());
+
+    this.applySemanticLodVisibility();
   }
 
-  /**
-   * Synchronize 3D meshes with current simulation bodies.
-   */
+  /** Synchronize 3D meshes with authoritative simulation bodies. */
   public syncBodies(bodies: CelestialBody[]): void {
+    this.latestBodies = bodies;
     const activeIds = new Set(bodies.map(b => b.id));
 
-    // Remove obsolete meshes
     for (const [id, group] of this.bodyMeshes) {
       if (!activeIds.has(id)) {
         this.scene.remove(group);
+        this.disposeGroup(group);
         this.bodyMeshes.delete(id);
       }
     }
 
-    // Update floating origin if following or focusing a body
     if (this.selectedBodyId && (this.viewMode === 'focus_selected' || this.viewMode === 'follow_selected')) {
       const selected = bodies.find(b => b.id === this.selectedBodyId);
       if (selected) {
@@ -179,20 +196,12 @@ export class SceneManager {
 
     const primaryStar = bodies.find(b => b.type === 'star') || bodies[0];
 
-    // Update or create meshes
     for (const b of bodies) {
       let group = this.bodyMeshes.get(b.id);
 
-      // Recreate mesh if classification or type has changed (e.g. star -> black hole collapse)
       if (group && (group.userData.type !== b.type || group.userData.classification !== b.classification)) {
         this.scene.remove(group);
-        group.traverse(child => {
-          if (child instanceof THREE.Mesh) {
-            child.geometry.dispose();
-            if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
-            else child.material.dispose();
-          }
-        });
+        this.disposeGroup(group);
         this.bodyMeshes.delete(b.id);
         group = undefined;
       }
@@ -203,21 +212,17 @@ export class SceneManager {
         this.scene.add(group);
       }
 
-      // Calculate relative coordinate and display position
       const relPos = this.floatingOrigin.toRelative(b.position);
       const dispPos = this.scaleTransform.getDisplayPosition(relPos);
       group.position.set(dispPos.x, dispPos.y, dispPos.z);
 
-      // Scale mesh
       const dispRadius = this.scaleTransform.getDisplayRadius(b.radiusKm, b.type);
       const coreMesh = group.getObjectByName('core') as THREE.Mesh;
       if (coreMesh) {
-        // If not actively being collapsed by presentation sequence, set normal scale
         if (!this.collapsePresentation.isActive() || this.collapsePresentation.getTargetBodyId() !== b.id) {
           coreMesh.scale.set(dispRadius, dispRadius, dispRadius);
         }
 
-        // Update shader uniforms if applicable
         if (coreMesh.material instanceof THREE.ShaderMaterial) {
           if (coreMesh.material.uniforms.uTime) {
             coreMesh.material.uniforms.uTime.value = this.clock.getElapsedTime();
@@ -232,7 +237,6 @@ export class SceneManager {
         }
       }
 
-      // Update corona mesh if star
       const coronaMesh = group.getObjectByName('corona') as THREE.Mesh;
       if (coronaMesh) {
         coronaMesh.scale.set(dispRadius, dispRadius, dispRadius);
@@ -246,7 +250,6 @@ export class SceneManager {
         }
       }
 
-      // Update accretion disk mesh if black hole with explicit hasAccretionDisk
       let diskMesh = group.getObjectByName('accretionDisk') as THREE.Mesh;
       if (b.type === 'black_hole' && b.hasAccretionDisk) {
         if (!diskMesh) {
@@ -268,14 +271,24 @@ export class SceneManager {
         else diskMesh.material.dispose();
       }
 
-      // Update rings if attached
       if (b.rings && b.rings.length > 0) {
         this.updateBodyRings(b, group, dispRadius, primaryStar);
       }
+
+      this.applyBodyLodVisibility(group, b.id === this.selectedBodyId);
     }
 
-    // Update gravity grid
     this.gravityGrid.update(bodies);
+  }
+
+  private disposeGroup(group: THREE.Group): void {
+    group.traverse(child => {
+      if (child instanceof THREE.Mesh) {
+        child.geometry.dispose();
+        if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+        else child.material.dispose();
+      }
+    });
   }
 
   private createBodyMesh(b: CelestialBody): THREE.Group {
@@ -288,44 +301,40 @@ export class SceneManager {
     const sphereGeo = new THREE.SphereGeometry(1, 32, 24);
 
     if (b.type === 'black_hole') {
-      const mat = createBlackHoleMaterial();
-      coreMesh = new THREE.Mesh(sphereGeo, mat);
+      coreMesh = new THREE.Mesh(sphereGeo, createBlackHoleMaterial());
       if (b.hasAccretionDisk) {
         const diskGeo = new THREE.RingGeometry(1.5, 4.0, 64);
-        const diskMat = createAccretionDiskMaterial();
-        const diskMesh = new THREE.Mesh(diskGeo, diskMat);
+        const diskMesh = new THREE.Mesh(diskGeo, createAccretionDiskMaterial());
         diskMesh.name = 'accretionDisk';
         diskMesh.rotation.x = Math.PI / 2;
         group.add(diskMesh);
       }
     } else if (b.type === 'star') {
-      const mat = createStarMaterial(b.color, b.starsilkBleed);
-      coreMesh = new THREE.Mesh(sphereGeo, mat);
-      const coronaGeo = new THREE.SphereGeometry(1.35, 32, 24);
-      const coronaMat = createCoronaMaterial(b.color, b.starsilkBleed);
-      const coronaMesh = new THREE.Mesh(coronaGeo, coronaMat);
+      coreMesh = new THREE.Mesh(sphereGeo, createStarMaterial(b.color, b.starsilkBleed));
+      const coronaMesh = new THREE.Mesh(
+        new THREE.SphereGeometry(1.35, 32, 24),
+        createCoronaMaterial(b.color, b.starsilkBleed)
+      );
       coronaMesh.name = 'corona';
       group.add(coronaMesh);
     } else if (b.classification === 'gas_giant') {
-      const mat = createGasGiantMaterial(b.color, b.atmosphereColor);
-      coreMesh = new THREE.Mesh(sphereGeo, mat);
+      coreMesh = new THREE.Mesh(sphereGeo, createGasGiantMaterial(b.color, b.atmosphereColor));
     } else {
-      const mat = createPlanetMaterial(b.color, b.atmosphereColor);
-      coreMesh = new THREE.Mesh(sphereGeo, mat);
+      coreMesh = new THREE.Mesh(sphereGeo, createPlanetMaterial(b.color, b.atmosphereColor));
     }
 
     coreMesh.name = 'core';
     group.add(coreMesh);
 
-    // Selection halo (hidden by default)
-    const haloGeo = new THREE.RingGeometry(1.2, 1.3, 32);
-    const haloMat = new THREE.MeshBasicMaterial({
-      color: '#0cc6ff',
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.85,
-    });
-    const halo = new THREE.Mesh(haloGeo, haloMat);
+    const halo = new THREE.Mesh(
+      new THREE.RingGeometry(1.2, 1.3, 32),
+      new THREE.MeshBasicMaterial({
+        color: '#0cc6ff',
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.85,
+      })
+    );
     halo.name = 'selectionHalo';
     halo.rotation.x = Math.PI / 2;
     halo.visible = false;
@@ -338,10 +347,9 @@ export class SceneManager {
     const ringIds = new Set((b.rings || []).map(r => `ring-${r.id}`));
     const toRemove: THREE.Object3D[] = [];
     group.children.forEach(child => {
-      if (child.name.startsWith('ring-') && !ringIds.has(child.name)) {
-        toRemove.push(child);
-      }
+      if (child.name.startsWith('ring-') && !ringIds.has(child.name)) toRemove.push(child);
     });
+
     for (const obj of toRemove) {
       group.remove(obj);
       if (obj instanceof THREE.Mesh) {
@@ -359,9 +367,7 @@ export class SceneManager {
     for (const ring of b.rings || []) {
       let ringMesh = group.getObjectByName(`ring-${ring.id}`) as THREE.Mesh;
       if (!ringMesh) {
-        const innerR = 1.4;
-        const outerR = 2.4;
-        const geo = new THREE.RingGeometry(innerR, outerR, 64);
+        const geo = new THREE.RingGeometry(1.4, 2.4, 64);
         const mat = ring.isBloodRing ? createBloodRingMaterial(1.0) : createOrdinaryRingMaterial(ring.color, 1.0);
         ringMesh = new THREE.Mesh(geo, mat);
         ringMesh.name = `ring-${ring.id}`;
@@ -370,12 +376,8 @@ export class SceneManager {
       }
       ringMesh.scale.set(dispRadius, dispRadius, dispRadius);
       if (ringMesh.material instanceof THREE.ShaderMaterial) {
-        if (ringMesh.material.uniforms.uLightDir) {
-          ringMesh.material.uniforms.uLightDir.value.copy(lightDir);
-        }
-        if (ringMesh.material.uniforms.uTime) {
-          ringMesh.material.uniforms.uTime.value = this.clock.getElapsedTime();
-        }
+        if (ringMesh.material.uniforms.uLightDir) ringMesh.material.uniforms.uLightDir.value.copy(lightDir);
+        if (ringMesh.material.uniforms.uTime) ringMesh.material.uniforms.uTime.value = this.clock.getElapsedTime();
       }
     }
   }
@@ -390,24 +392,130 @@ export class SceneManager {
     }
     for (const [bodyId, group] of this.bodyMeshes) {
       const halo = group.getObjectByName('selectionHalo');
-      if (halo) {
-        halo.visible = bodyId === id;
-      }
+      if (halo) halo.visible = bodyId === id;
+      this.applyBodyLodVisibility(group, bodyId === id);
     }
+    this.applySemanticLodVisibility();
   }
 
   public setFateLensActive(active: boolean): void {
     this.fateLensRenderer.setActive(active);
-    if (this.selectedBodyId) {
-      this.fateLensRenderer.setTargetBody(this.selectedBodyId);
-    }
+    if (this.selectedBodyId) this.fateLensRenderer.setTargetBody(this.selectedBodyId);
   }
 
   public isFateLensActive(): boolean {
     return this.fateLensRenderer.getIsActive();
   }
 
-  // Camera navigation methods
+  public getSemanticLodTier(): SemanticLodTier {
+    return this.semanticLodTier;
+  }
+
+  private applyBodyLodVisibility(group: THREE.Group, selected: boolean): void {
+    const keepFineDetail = this.semanticLodTier !== 'system' || selected;
+    for (const child of group.children) {
+      if (child.name === 'corona' || child.name === 'accretionDisk' || child.name.startsWith('ring-')) {
+        child.visible = keepFineDetail;
+      }
+    }
+  }
+
+  private applySemanticLodVisibility(): void {
+    const showContext = this.semanticLodTier !== 'system';
+    const showDetail = this.semanticLodTier === 'detail';
+
+    // Fate Lens and trajectories remain untouched: they are primary analytical context.
+    this.keplerianOverlay.getGroup().visible = showContext;
+    this.orbitalBoundsOverlay.getGroup().visible = showContext;
+    this.encounterOverlay.getGroup().visible = showContext;
+    this.lagrangeOverlay.getGroup().visible = showDetail;
+    this.vectorOverlay.getGroup().visible = showDetail;
+    this.orbitalPlaneGizmo.getGroup().visible = showDetail;
+
+    for (const [id, group] of this.bodyMeshes) {
+      this.applyBodyLodVisibility(group, id === this.selectedBodyId);
+    }
+  }
+
+  private updateSemanticLod(): void {
+    const next = resolveSemanticLod(this.cameraDistance, this.semanticLodTier);
+    if (next === this.semanticLodTier) return;
+    this.semanticLodTier = next;
+    this.applySemanticLodVisibility();
+  }
+
+  private findHoverBodyAtNdc(normalizedX: number, normalizedY: number, tolerancePx: number): string | null {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const pointerX = (normalizedX * 0.5 + 0.5) * rect.width;
+    const pointerY = (-(normalizedY * 0.5) + 0.5) * rect.height;
+
+    let bestId: string | null = null;
+    let bestDistance = tolerancePx;
+    this.camera.updateMatrixWorld();
+
+    for (const [id, group] of this.bodyMeshes) {
+      this.projectionScratch.copy(group.position).project(this.camera);
+      if (this.projectionScratch.z < -1 || this.projectionScratch.z > 1) continue;
+      const x = (this.projectionScratch.x * 0.5 + 0.5) * rect.width;
+      const y = (-(this.projectionScratch.y * 0.5) + 0.5) * rect.height;
+      const distance = Math.hypot(x - pointerX, y - pointerY);
+      if (distance <= bestDistance) {
+        bestDistance = distance;
+        bestId = id;
+      }
+    }
+
+    return bestId;
+  }
+
+  private updateSmartLabels(): void {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0 || this.latestBodies.length === 0) {
+      this.smartBodyLabels.clear();
+      return;
+    }
+
+    const primary = this.latestBodies.find(b => b.type === 'star') || this.latestBodies[0];
+    const candidates: SmartLabelCandidate[] = [];
+    this.camera.updateMatrixWorld();
+
+    for (const body of this.latestBodies) {
+      const group = this.bodyMeshes.get(body.id);
+      if (!group) continue;
+      this.projectionScratch.copy(group.position).project(this.camera);
+      const ndcX = this.projectionScratch.x;
+      const ndcY = this.projectionScratch.y;
+      const ndcZ = this.projectionScratch.z;
+      if (ndcZ < -1 || ndcZ > 1 || Math.abs(ndcX) > 1.04 || Math.abs(ndcY) > 1.04) continue;
+
+      const selected = body.id === this.selectedBodyId;
+      const hovered = body.id === this.hoveredBodyId;
+      const isPrimary = body.id === primary?.id;
+      let priority = 20;
+      if (body.type === 'black_hole') priority = 55;
+      else if (body.type === 'star') priority = 50;
+      if (isPrimary) priority = 80;
+      if (hovered) priority = 90;
+      if (selected) priority = 100;
+
+      candidates.push({
+        id: body.id,
+        name: body.name,
+        x: (ndcX * 0.5 + 0.5) * rect.width,
+        y: (-(ndcY * 0.5) + 0.5) * rect.height,
+        depth: this.camera.position.distanceTo(group.position),
+        priority,
+        selected,
+        hovered,
+        primary: isPrimary,
+      });
+    }
+
+    const maxLabels = this.semanticLodTier === 'detail' ? 12 : this.semanticLodTier === 'context' ? 8 : 5;
+    this.smartBodyLabels.update(layoutSmartLabels(candidates, rect.width, rect.height, maxLabels));
+  }
+
   public orbitCamera(deltaTheta: number, deltaPhi: number): void {
     this.cameraController.orbit(deltaTheta, deltaPhi);
   }
@@ -428,11 +536,8 @@ export class SceneManager {
 
   public setViewMode(mode: CameraViewMode): void {
     this.viewMode = mode;
-    if (mode === 'top_down') {
-      this.cameraController.setCardinalView('top');
-    } else {
-      this.cameraController.setCardinalView('isometric');
-    }
+    if (mode === 'top_down') this.cameraController.setCardinalView('top');
+    else this.cameraController.setCardinalView('isometric');
   }
 
   public frameBody(bodyId: string, durationSec: number = 0.75): void {
@@ -461,24 +566,17 @@ export class SceneManager {
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
 
-    // 1. Check body intersection first
     const candidates: THREE.Mesh[] = [];
     for (const [, group] of this.bodyMeshes) {
       const core = group.getObjectByName('core') as THREE.Mesh;
       if (core) candidates.push(core);
     }
     const hits = raycaster.intersectObjects(candidates, false);
-    if (hits.length > 0 && hits[0].point) {
-      return hits[0].point;
-    }
+    if (hits.length > 0 && hits[0].point) return hits[0].point;
 
-    // 2. Check orbital plane (y = 0)
     const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     const planeHit = new THREE.Vector3();
-    if (raycaster.ray.intersectPlane(plane, planeHit)) {
-      return planeHit;
-    }
-
+    if (raycaster.ray.intersectPlane(plane, planeHit)) return planeHit;
     return null;
   }
 
@@ -490,12 +588,13 @@ export class SceneManager {
   }
 
   public update(deltaSec: number): void {
-    // Drive camera via CameraController with inertia, damping, and framing
     this.cameraController.update(deltaSec);
     this.cameraTarget.copy(this.cameraController.target);
     this.cameraDistance = this.cameraController.distance;
     this.cameraSpherical.copy(this.cameraController.spherical);
     this.starfieldRenderer?.update(this.camera);
+
+    this.updateSemanticLod();
 
     if (this.pivotIndicator && this.cameraController.pivotIndicator) {
       this.pivotIndicator.update(
@@ -505,13 +604,15 @@ export class SceneManager {
       );
     }
 
-    // Smooth scale transform morph
     this.scaleTransform.update(deltaSec);
-
-    // Trajectory renderer animated chevrons
     this.trajectoryRenderer.update(deltaSec);
 
-    // Collapse presentation sequence
+    this.labelUpdateAccumulator += deltaSec;
+    if (this.labelUpdateAccumulator >= this.labelUpdateIntervalSec) {
+      this.labelUpdateAccumulator %= this.labelUpdateIntervalSec;
+      this.updateSmartLabels();
+    }
+
     if (this.collapsePresentation.isActive()) {
       const targetId = this.collapsePresentation.getTargetBodyId();
       const targetGroup = targetId ? this.bodyMeshes.get(targetId) || null : null;
@@ -524,14 +625,7 @@ export class SceneManager {
     const targetPos = group ? group.position.clone() : new THREE.Vector3();
     const core = group?.getObjectByName('core') as THREE.Mesh | undefined;
     const initialR = core ? core.scale.x : 10;
-    this.collapsePresentation.start(
-      {
-        targetPos,
-        initialRadius: initialR,
-        onComplete,
-      },
-      bodyId
-    );
+    this.collapsePresentation.start({ targetPos, initialRadius: initialR, onComplete }, bodyId);
     this.gravityGrid.triggerEventRipple(targetPos.x, targetPos.z, 1.8);
   }
 
@@ -545,6 +639,7 @@ export class SceneManager {
     this.renderer.setSize(width, height, false);
     this.starfieldRenderer?.setPixelRatio(this.renderer.getPixelRatio());
     this.trajectoryRenderer.setResolution(width, height);
+    this.updateSmartLabels();
   }
 
   private lastPickCoords: { x: number; y: number } | null = null;
@@ -552,7 +647,7 @@ export class SceneManager {
 
   /**
    * Raycast or screen-space tolerance pick celestial bodies (#39).
-   * Supports touch tolerance radius (default 28px) and multi-tap cycling for overlapping clusters.
+   * Supports touch tolerance radius and multi-tap cycling for overlapping clusters.
    */
   public raycastBody(normalizedX: number, normalizedY: number, screenPixelTolerance: number = 28): string | null {
     const raycaster = new THREE.Raycaster();
@@ -561,25 +656,19 @@ export class SceneManager {
     const candidates: { id: string; mesh: THREE.Mesh }[] = [];
     for (const [id, group] of this.bodyMeshes) {
       const core = group.getObjectByName('core') as THREE.Mesh;
-      if (core) {
-        candidates.push({ id, mesh: core });
-      }
+      if (core) candidates.push({ id, mesh: core });
     }
 
-    const meshes = candidates.map(c => c.mesh);
-    const intersects = raycaster.intersectObjects(meshes, false);
-
+    const intersects = raycaster.intersectObjects(candidates.map(c => c.mesh), false);
     if (intersects.length > 0) {
       const hit = intersects[0].object;
       const found = candidates.find(c => c.mesh === hit);
       if (found) return found.id;
     }
 
-    // 2. Screen-space proximity picking (#39)
     const rect = this.renderer.domElement.getBoundingClientRect();
     const clickScreenX = (normalizedX * 0.5 + 0.5) * rect.width;
     const clickScreenY = (-(normalizedY * 0.5) + 0.5) * rect.height;
-
     const proximityMatches: { id: string; distancePx: number }[] = [];
 
     for (const [id] of this.bodyMeshes) {
@@ -588,9 +677,7 @@ export class SceneManager {
       const relX = screenPos.x - rect.left;
       const relY = screenPos.y - rect.top;
       const dist = Math.hypot(relX - clickScreenX, relY - clickScreenY);
-      if (dist <= screenPixelTolerance) {
-        proximityMatches.push({ id, distancePx: dist });
-      }
+      if (dist <= screenPixelTolerance) proximityMatches.push({ id, distancePx: dist });
     }
 
     if (proximityMatches.length === 0) {
@@ -600,7 +687,6 @@ export class SceneManager {
     }
 
     proximityMatches.sort((a, b) => a.distancePx - b.distancePx);
-
     const isConsecutiveTap =
       this.lastPickCoords &&
       Math.hypot(this.lastPickCoords.x - clickScreenX, this.lastPickCoords.y - clickScreenY) < 16;
@@ -611,16 +697,12 @@ export class SceneManager {
       chosenIndex = this.lastPickCycleIndex;
     } else {
       this.lastPickCycleIndex = 0;
-      chosenIndex = 0;
     }
 
     this.lastPickCoords = { x: clickScreenX, y: clickScreenY };
     return proximityMatches[chosenIndex].id;
   }
 
-  /**
-   * Compute 2D screen coordinates (in client CSS pixels) for a given celestial body.
-   */
   public getBodyScreenPosition(bodyId: string): { x: number; y: number } | null {
     const group = this.bodyMeshes.get(bodyId);
     if (!group) return null;
@@ -636,33 +718,26 @@ export class SceneManager {
     };
   }
 
-
-  /**
-   * Raycast onto the orbital reference plane (y = 0 relative to target) to get 3D intersection.
-   */
   public raycastOrbitalPlane(normalizedX: number, normalizedY: number, planeY: number = 0): Vector3D | null {
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(new THREE.Vector2(normalizedX, normalizedY), this.camera);
-
     const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY);
     const intersection = new THREE.Vector3();
     const hit = raycaster.ray.intersectPlane(plane, intersection);
-
-    if (hit) {
-      return { x: hit.x, y: hit.y, z: hit.z };
-    }
+    if (hit) return { x: hit.x, y: hit.y, z: hit.z };
     return null;
   }
 
   public dispose(): void {
+    this.renderer.domElement.removeEventListener('pointermove', this.handleLabelPointerMove);
+    this.renderer.domElement.removeEventListener('pointerleave', this.handleLabelPointerLeave);
+    this.smartBodyLabels.dispose();
     this.pivotIndicator.dispose();
     this.vectorOverlay.dispose();
     this.encounterOverlay.dispose();
     this.orbitalPlaneGizmo.dispose();
     this.starfieldRenderer?.dispose();
-    if (this.starfieldRenderer) {
-      this.scene.remove(this.starfieldRenderer.getGroup());
-    }
+    if (this.starfieldRenderer) this.scene.remove(this.starfieldRenderer.getGroup());
     this.fateLensRenderer.dispose();
     this.keplerianOverlay.dispose();
     this.orbitalBoundsOverlay.dispose();
@@ -671,6 +746,7 @@ export class SceneManager {
     this.collapsePresentation.dispose();
     for (const [, group] of this.bodyMeshes) {
       this.scene.remove(group);
+      this.disposeGroup(group);
     }
     this.bodyMeshes.clear();
     this.renderer.dispose();
