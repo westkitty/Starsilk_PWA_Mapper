@@ -45,7 +45,6 @@ describe('Authoritative Pointer Intent & Modality Routing', () => {
   });
 
   it('TEST F: Touch navigation does not accidentally trigger object manipulation', () => {
-    // 1. In grab_throw mode, finger touch on a body selects it rather than manipulating
     const touchIntent = resolvePointerIntent({
       tool: 'grab_throw',
       pointerType: 'touch',
@@ -54,7 +53,6 @@ describe('Authoritative Pointer Intent & Modality Routing', () => {
     expect(touchIntent).toBe('select_body');
     expect(touchIntent).not.toBe('grab_throw_manipulate');
 
-    // 2. In paused state, finger touch on a body selects it rather than manipulating
     const pausedTouchIntent = resolvePointerIntent({
       tool: 'select',
       pointerType: 'touch',
@@ -64,7 +62,6 @@ describe('Authoritative Pointer Intent & Modality Routing', () => {
     expect(pausedTouchIntent).toBe('select_body');
     expect(pausedTouchIntent).not.toBe('grab_throw_manipulate');
 
-    // 3. Pen/mouse in grab_throw mode DOES manipulate
     const penIntent = resolvePointerIntent({
       tool: 'grab_throw',
       pointerType: 'pen',
@@ -85,6 +82,11 @@ describe('Integrated PointerManager & Interaction Bridge Lifecycle', () => {
   const createMockElement = () => {
     const listeners: Record<string, ((e: any) => void)[]> = {};
     return {
+      style: {
+        touchAction: '',
+        userSelect: '',
+        overscrollBehavior: '',
+      },
       addEventListener: (type: string, fn: any) => {
         if (!listeners[type]) listeners[type] = [];
         listeners[type].push(fn);
@@ -140,7 +142,6 @@ describe('Integrated PointerManager & Interaction Bridge Lifecycle', () => {
     let selectedBodyId: string | null = null;
     let loomStrokeStarted = false;
 
-    // Simulate persistent PointerManager with latest-value intent bridge
     const pointerMgr = new PointerManager(mockElem as any, {
       onPointerDown: (e) => {
         const hitBodyId = mockScene.raycastBody(e.clientX / 1000, e.clientY / 800);
@@ -178,31 +179,27 @@ describe('Integrated PointerManager & Interaction Bridge Lifecycle', () => {
       onTwoFingerPan: () => {},
     });
 
-    // Cycle 1: SELECT tool with touch -> selects body
-    mockElem._dispatch('pointerdown', { pointerId: 1, pointerType: 'touch', clientX: 500, clientY: 400 });
+    mockElem._dispatch('pointerdown', { pointerId: 1, pointerType: 'touch', button: 0, buttons: 1, clientX: 500, clientY: 400 });
     expect(selectedBodyId).toBe('body-alpha');
     expect(loomStrokeStarted).toBe(false);
-    mockElem._dispatch('pointerup', { pointerId: 1, pointerType: 'touch', clientX: 500, clientY: 400 });
+    mockElem._dispatch('pointerup', { pointerId: 1, pointerType: 'touch', button: 0, buttons: 0, clientX: 500, clientY: 400 });
 
-    // Cycle 2: Switch to LOOM -> touch does NOT draw
     activeTool = 'orbit_loom';
-    mockElem._dispatch('pointerdown', { pointerId: 1, pointerType: 'touch', clientX: 500, clientY: 400 });
+    mockElem._dispatch('pointerdown', { pointerId: 1, pointerType: 'touch', button: 0, buttons: 1, clientX: 500, clientY: 400 });
     expect(loomStrokeStarted).toBe(false);
     expect(pointerMgr.isDrawingOrbit).toBe(false);
-    mockElem._dispatch('pointerup', { pointerId: 1, pointerType: 'touch', clientX: 500, clientY: 400 });
+    mockElem._dispatch('pointerup', { pointerId: 1, pointerType: 'touch', button: 0, buttons: 0, clientX: 500, clientY: 400 });
 
-    // Cycle 3: Switch back to SELECT -> tap empty void deselects
     activeTool = 'select';
-    mockElem._dispatch('pointerdown', { pointerId: 1, pointerType: 'touch', clientX: -100, clientY: 400 });
+    mockElem._dispatch('pointerdown', { pointerId: 1, pointerType: 'touch', button: 0, buttons: 1, clientX: -100, clientY: 400 });
     expect(selectedBodyId).toBeNull();
-    mockElem._dispatch('pointerup', { pointerId: 1, pointerType: 'touch', clientX: -100, clientY: 400 });
+    mockElem._dispatch('pointerup', { pointerId: 1, pointerType: 'touch', button: 0, buttons: 0, clientX: -100, clientY: 400 });
 
-    // Cycle 4: Switch to LOOM -> Pen DOES start drawing
     activeTool = 'orbit_loom';
-    mockElem._dispatch('pointerdown', { pointerId: 2, pointerType: 'pen', clientX: 300, clientY: 200 });
+    mockElem._dispatch('pointerdown', { pointerId: 2, pointerType: 'pen', button: 0, buttons: 1, clientX: 300, clientY: 200 });
     expect(loomStrokeStarted).toBe(true);
     expect(pointerMgr.isDrawingOrbit).toBe(true);
-    mockElem._dispatch('pointerup', { pointerId: 2, pointerType: 'pen', clientX: 300, clientY: 200 });
+    mockElem._dispatch('pointerup', { pointerId: 2, pointerType: 'pen', button: 0, buttons: 0, clientX: 300, clientY: 200 });
     expect(pointerMgr.isDrawingOrbit).toBe(false);
 
     pointerMgr.destroy();
@@ -236,25 +233,21 @@ describe('Integrated PointerManager & Interaction Bridge Lifecycle', () => {
       onTwoFingerPan: () => { twoFingerPanCalled = true; },
     });
 
-    // 1. Finger 1 down at (100, 100)
-    mockElem._dispatch('pointerdown', { pointerId: 1, pointerType: 'touch', clientX: 100, clientY: 100 });
+    mockElem._dispatch('pointerdown', { pointerId: 1, pointerType: 'touch', button: 0, buttons: 1, clientX: 100, clientY: 100 });
     expect(strokeCreated).toBe(false);
     expect(pointerMgr.isDrawingOrbit).toBe(false);
 
-    // 2. Finger 2 down at (200, 200)
-    mockElem._dispatch('pointerdown', { pointerId: 2, pointerType: 'touch', clientX: 200, clientY: 200 });
+    mockElem._dispatch('pointerdown', { pointerId: 2, pointerType: 'touch', button: 0, buttons: 1, clientX: 200, clientY: 200 });
     expect(strokeCreated).toBe(false);
     expect(pointerMgr.isDrawingOrbit).toBe(false);
 
-    // 3. Move finger 2 to (250, 250) (pinch gesture)
-    mockElem._dispatch('pointermove', { pointerId: 2, pointerType: 'touch', clientX: 250, clientY: 250 });
+    mockElem._dispatch('pointermove', { pointerId: 2, pointerType: 'touch', button: -1, buttons: 1, clientX: 250, clientY: 250 });
     expect(pinchZoomCalled).toBe(true);
     expect(twoFingerPanCalled).toBe(true);
     expect(strokeCreated).toBe(false);
 
-    // 4. Release both fingers
-    mockElem._dispatch('pointerup', { pointerId: 1, pointerType: 'touch', clientX: 100, clientY: 100 });
-    mockElem._dispatch('pointerup', { pointerId: 2, pointerType: 'touch', clientX: 250, clientY: 250 });
+    mockElem._dispatch('pointerup', { pointerId: 1, pointerType: 'touch', button: 0, buttons: 0, clientX: 100, clientY: 100 });
+    mockElem._dispatch('pointerup', { pointerId: 2, pointerType: 'touch', button: 0, buttons: 0, clientX: 250, clientY: 250 });
     expect(pointerMgr.isDrawingOrbit).toBe(false);
     expect(strokeCreated).toBe(false);
 
@@ -283,11 +276,8 @@ describe('Integrated PointerManager & Interaction Bridge Lifecycle', () => {
       onTwoFingerPan: () => {},
     });
 
-    // Pointer down at (100, 100)
-    mockElem._dispatch('pointerdown', { pointerId: 1, pointerType: 'touch', clientX: 100, clientY: 100 });
-
-    // Pointer move to (125, 110)
-    mockElem._dispatch('pointermove', { pointerId: 1, pointerType: 'touch', clientX: 125, clientY: 110, buttons: 1 });
+    mockElem._dispatch('pointerdown', { pointerId: 1, pointerType: 'touch', button: 0, buttons: 1, clientX: 100, clientY: 100 });
+    mockElem._dispatch('pointermove', { pointerId: 1, pointerType: 'touch', button: -1, clientX: 125, clientY: 110, buttons: 1 });
 
     expect(capturedDeltaX).toBe(25);
     expect(capturedDeltaY).toBe(10);
