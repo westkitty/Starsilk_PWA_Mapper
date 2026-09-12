@@ -1,17 +1,15 @@
 /**
  * Closest-Approach & Orbital Conjunction Overlay (#46).
- * 
- * Analyzes multi-body forecast trajectories to identify meaningful future encounters:
- * - Computes closest approach distance and time-to-encounter
- * - Highlights genuine collision risks when distance < sum of physical radii
- * - Visualizes 3D diamond encounter markers and conjunction line chords
- * - Strictly limits visual markers to the top 2 highest-value encounters
+ *
+ * Forecast analysis is recomputed only when meaningful forecast samples change.
+ * Stable frames reuse marker geometry/materials and only refresh display positions,
+ * avoiding per-frame GPU resource churn while preserving floating-origin updates.
  */
 
-import * as THREE from "three";
-import { CelestialBody, Vector3D } from "../simulation/types";
-import { ScaleTransform } from "./scale-transform";
-import { FloatingOrigin } from "./floating-origin";
+import * as THREE from 'three';
+import { CelestialBody, Vector3D } from '../simulation/types';
+import { ScaleTransform } from './scale-transform';
+import { FloatingOrigin } from './floating-origin';
 
 export interface EncounterData {
   bodyAId: string;
@@ -24,21 +22,28 @@ export interface EncounterData {
   positionKm: Vector3D;
 }
 
+interface PathFingerprint {
+  length: number;
+  first: Vector3D | undefined;
+  middle: Vector3D | undefined;
+  last: Vector3D | undefined;
+}
+
 export class EncounterOverlay {
   private group: THREE.Group;
   private scaleTransform: ScaleTransform;
   private floatingOrigin: FloatingOrigin;
 
   private markers: THREE.Mesh[] = [];
-  private chordLines: THREE.Line[] = [];
   private currentEncounters: EncounterData[] = [];
+  private lastSelectedBodyId: string | null = null;
+  private pathFingerprints = new Map<string, PathFingerprint>();
 
   constructor(scaleTransform: ScaleTransform, floatingOrigin: FloatingOrigin) {
     this.scaleTransform = scaleTransform;
     this.floatingOrigin = floatingOrigin;
-
     this.group = new THREE.Group();
-    this.group.name = "EncounterOverlayGroup";
+    this.group.name = 'EncounterOverlayGroup';
   }
 
   public getGroup(): THREE.Group {
@@ -54,11 +59,65 @@ export class EncounterOverlay {
     allBodies: CelestialBody[],
     trajectories: Record<string, Vector3D[]> | null
   ): void {
-    this.clear();
-
-    if (!selectedBodyId || !trajectories || !trajectories[selectedBodyId]) {
+    if (!this.haveForecastSamplesChanged(selectedBodyId, trajectories)) {
+      this.updateMarkerPositions();
       return;
     }
+
+    this.captureForecastFingerprint(selectedBodyId, trajectories);
+    this.rebuildAnalysis(selectedBodyId, allBodies, trajectories);
+  }
+
+  private haveForecastSamplesChanged(
+    selectedBodyId: string | null,
+    trajectories: Record<string, Vector3D[]> | null
+  ): boolean {
+    if (selectedBodyId !== this.lastSelectedBodyId) return true;
+    if (!trajectories) return this.pathFingerprints.size > 0;
+
+    const ids = Object.keys(trajectories);
+    if (ids.length !== this.pathFingerprints.size) return true;
+
+    for (const id of ids) {
+      const path = trajectories[id];
+      const previous = this.pathFingerprints.get(id);
+      if (!previous || previous.length !== path.length) return true;
+      const middle = path.length > 0 ? path[Math.floor(path.length / 2)] : undefined;
+      if (previous.first !== path[0] || previous.middle !== middle || previous.last !== path[path.length - 1]) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private captureForecastFingerprint(
+    selectedBodyId: string | null,
+    trajectories: Record<string, Vector3D[]> | null
+  ): void {
+    this.lastSelectedBodyId = selectedBodyId;
+    this.pathFingerprints.clear();
+    if (!trajectories) return;
+
+    for (const [id, path] of Object.entries(trajectories)) {
+      this.pathFingerprints.set(id, {
+        length: path.length,
+        first: path[0],
+        middle: path.length > 0 ? path[Math.floor(path.length / 2)] : undefined,
+        last: path[path.length - 1],
+      });
+    }
+  }
+
+  private rebuildAnalysis(
+    selectedBodyId: string | null,
+    allBodies: CelestialBody[],
+    trajectories: Record<string, Vector3D[]> | null
+  ): void {
+    this.disposeMarkers();
+    this.currentEncounters = [];
+
+    if (!selectedBodyId || !trajectories || !trajectories[selectedBodyId]) return;
 
     const selBody = allBodies.find(b => b.id === selectedBodyId);
     if (!selBody) return;
@@ -68,7 +127,6 @@ export class EncounterOverlay {
 
     const candidateEncounters: EncounterData[] = [];
 
-    // Compare with all other bodies that have trajectories
     for (const other of allBodies) {
       if (other.id === selectedBodyId) continue;
       const otherPath = trajectories[other.id];
@@ -88,66 +146,66 @@ export class EncounterOverlay {
         }
       }
 
-      if (minIdx > 0 && minDistance < Infinity) {
-        const sumRadii = (selBody.radiusKm || 1000) + (other.radiusKm || 1000);
-        // Only consider if close enough to be an encounter (< 500,000 km or < 15x radii)
-        const threshold = Math.max(500000, sumRadii * 15);
-        if (minDistance < threshold) {
-          const isCollision = minDistance <= sumRadii * 1.05;
-          // Approximate time assuming ~60 sec step
-          const timeSec = minIdx * 60;
-          candidateEncounters.push({
-            bodyAId: selBody.id,
-            bodyAName: selBody.name,
-            bodyBId: other.id,
-            bodyBName: other.name,
-            closestDistanceKm: minDistance,
-            timeUntilSec: timeSec,
-            isCollisionRisk: isCollision,
-            positionKm: selPath[minIdx],
-          });
-        }
-      }
+      if (minIdx <= 0 || minDistance === Infinity) continue;
+
+      const sumRadii = (selBody.radiusKm || 1000) + (other.radiusKm || 1000);
+      const threshold = Math.max(500000, sumRadii * 15);
+      if (minDistance >= threshold) continue;
+
+      candidateEncounters.push({
+        bodyAId: selBody.id,
+        bodyAName: selBody.name,
+        bodyBId: other.id,
+        bodyBName: other.name,
+        closestDistanceKm: minDistance,
+        timeUntilSec: minIdx * 60,
+        isCollisionRisk: minDistance <= sumRadii * 1.05,
+        positionKm: selPath[minIdx],
+      });
     }
 
-    // Sort by distance (closest first), take top 2
     candidateEncounters.sort((a, b) => a.closestDistanceKm - b.closestDistanceKm);
     this.currentEncounters = candidateEncounters.slice(0, 2);
 
-    // Build visual markers
-    for (const enc of this.currentEncounters) {
-      const rel = this.floatingOrigin.toRelative(enc.positionKm);
+    for (const encounter of this.currentEncounters) {
+      const marker = new THREE.Mesh(
+        new THREE.OctahedronGeometry(1.5, 0),
+        new THREE.MeshBasicMaterial({
+          color: encounter.isCollisionRisk ? 0xef4444 : 0xf59e0b,
+          wireframe: true,
+        })
+      );
+      this.group.add(marker);
+      this.markers.push(marker);
+    }
+
+    this.updateMarkerPositions();
+  }
+
+  private updateMarkerPositions(): void {
+    const count = Math.min(this.markers.length, this.currentEncounters.length);
+    for (let i = 0; i < count; i++) {
+      const encounter = this.currentEncounters[i];
+      const rel = this.floatingOrigin.toRelative(encounter.positionKm);
       const disp = this.scaleTransform.getDisplayPosition(rel);
-
-      const color = enc.isCollisionRisk ? 0xef4444 : 0xf59e0b;
-
-      // 3D diamond marker
-      const geo = new THREE.OctahedronGeometry(1.5, 0);
-      const mat = new THREE.MeshBasicMaterial({
-        color,
-        wireframe: true,
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(disp.x, disp.y, disp.z);
-      this.group.add(mesh);
-      this.markers.push(mesh);
+      this.markers[i].position.set(disp.x, disp.y, disp.z);
     }
   }
 
-  public clear(): void {
-    for (const m of this.markers) {
-      this.group.remove(m);
-      m.geometry.dispose();
-      (m.material as THREE.Material).dispose();
-    }
-    for (const l of this.chordLines) {
-      this.group.remove(l);
-      l.geometry.dispose();
-      (l.material as THREE.Material).dispose();
+  private disposeMarkers(): void {
+    for (const marker of this.markers) {
+      this.group.remove(marker);
+      marker.geometry.dispose();
+      (marker.material as THREE.Material).dispose();
     }
     this.markers = [];
-    this.chordLines = [];
+  }
+
+  public clear(): void {
+    this.disposeMarkers();
     this.currentEncounters = [];
+    this.lastSelectedBodyId = null;
+    this.pathFingerprints.clear();
   }
 
   public dispose(): void {

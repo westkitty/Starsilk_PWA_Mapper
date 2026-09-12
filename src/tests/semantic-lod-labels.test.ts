@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { CelestialBody, Vector3D } from '../simulation/types';
+import { FloatingOrigin } from '../rendering/floating-origin';
+import { ScaleTransform } from '../rendering/scale-transform';
+import { EncounterOverlay } from '../rendering/encounter-overlay';
 import { layoutSmartLabels, resolveSemanticLod } from '../ui/smart-body-labels';
 
 describe('Semantic zoom and smart labels repair (#42, #50)', () => {
@@ -45,5 +49,46 @@ describe('Semantic zoom and smart labels repair (#42, #50)', () => {
       expect(placement.labelX + placement.width).toBeLessThanOrEqual(320);
       expect(placement.labelY + placement.height).toBeLessThanOrEqual(180);
     }
+  });
+
+  it('reuses encounter marker GPU resources until forecast samples actually change', () => {
+    const scale = new ScaleTransform();
+    const floatingOrigin = new FloatingOrigin();
+    const overlay = new EncounterOverlay(scale, floatingOrigin);
+
+    const selected = {
+      id: 'a', name: 'A', type: 'planet', massKg: 1e20, radiusKm: 1000,
+      position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, color: '#fff',
+    } as CelestialBody;
+    const other = {
+      id: 'b', name: 'B', type: 'planet', massKg: 1e20, radiusKm: 1000,
+      position: { x: 1000, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, color: '#fff',
+    } as CelestialBody;
+
+    const a0: Vector3D = { x: 0, y: 0, z: 0 };
+    const a1: Vector3D = { x: 1000, y: 0, z: 0 };
+    const a2: Vector3D = { x: 2000, y: 0, z: 0 };
+    const b0: Vector3D = { x: 1000000, y: 0, z: 0 };
+    const b1: Vector3D = { x: 1100, y: 0, z: 0 };
+    const b2: Vector3D = { x: 500000, y: 0, z: 0 };
+
+    overlay.update('a', [selected, other], { a: [a0, a1, a2], b: [b0, b1, b2] });
+    expect(overlay.getEncounters()).toHaveLength(1);
+    const firstMarker = overlay.getGroup().children[0];
+    expect(firstMarker).toBeDefined();
+
+    // App currently rebuilds lightweight arrays around the same forecast Vector3D samples each frame.
+    // That must not cause Three.js geometry/material churn.
+    overlay.update('a', [selected, other], { a: [a0, a1, a2], b: [b0, b1, b2] });
+    expect(overlay.getGroup().children[0]).toBe(firstMarker);
+
+    // New sample objects represent a genuinely new forecast and should rebuild analysis once.
+    overlay.update('a', [selected, other], {
+      a: [{ ...a0 }, { ...a1 }, { ...a2 }],
+      b: [{ ...b0 }, { ...b1 }, { ...b2 }],
+    });
+    expect(overlay.getGroup().children[0]).not.toBe(firstMarker);
+
+    overlay.dispose();
   });
 });
