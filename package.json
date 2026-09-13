@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && node scripts/stamp-build.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -13,7 +13,11 @@
     "verify": "npm run typecheck && npm run test && npm run build",
     "canon:refresh": "node scripts/refresh-canon.mjs",
     "qa:android": "node scripts/android-adb-qa.mjs",
-    "qa:android:pen": "node scripts/android-adb-qa.mjs --pen"
+    "qa:android:pen": "node scripts/android-adb-qa.mjs --pen",
+    "wrapper:mac:icon": "bash macos-wrapper/scripts/create-icns.sh",
+    "wrapper:mac:build": "bash macos-wrapper/scripts/build-wrapper.sh",
+    "wrapper:mac:install": "bash macos-wrapper/scripts/install-wrapper.sh",
+    "wrapper:mac:launch": "open -a \"$HOME/Applications/Starsilk System Planner.app\""
   },
   "dependencies": {
     "lucide-react": "^1.16.0",

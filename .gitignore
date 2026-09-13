@@ -28,3 +28,4 @@ pnpm-debug.log*
 # Local test & physical QA evidence
 evidence/
 *-evidence.png
+macos-wrapper/build/

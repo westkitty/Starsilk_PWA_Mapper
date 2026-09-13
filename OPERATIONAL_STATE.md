@@ -202,3 +202,72 @@ Synthetic Pointer Events and desktop CI do not count as physical proof for these
 **GitHub Pages deployment of runtime commit `b25f02c4…`:** VERIFIED.
 
 **Actual rendered visibility / Parable hand-feel / Tab S9 Ultra + S Pen parity / target-device performance:** PENDING PHYSICAL QA.
+
+---
+
+## 8. macOS Native Wrapper & Dock Runtime Integration
+
+### Architecture & Specification
+
+| Attribute | Value / Specification |
+| :--- | :--- |
+| **Application Name** | `Starsilk System Planner` |
+| **Installed Location** | `/Users/andrew/Applications/Starsilk System Planner.app` (`~/Applications`) |
+| **Reconciled Repository HEAD** | `74c284d4b94368ccde734198e34ed6bf7c229717` |
+| **Wrapper Architecture** | Native Swift (`AppKit` + `WebKit` / `WKWebView`), Apple Silicon `arm64` binary |
+| **Framework Overhead** | Zero Electron, zero Tauri, zero external runtime npm dependencies; binary size ~137 KB, total bundle size ~992 KB |
+| **Source Directory** | `macos-wrapper/` (`src/main.swift`, `resources/Info.plist`, `scripts/`) |
+| **Bundle Identifier** | `com.westkitty.starsilk-system-planner` |
+| **Application Icon** | Compiled `AppIcon.icns` (16x16 to 1024x1024) rasterized from authoritative `public/pwa-512x512.svg` via `magick` and `iconutil` |
+| **macOS Dock Integration** | Slot 37 in `~/Library/Preferences/com.apple.dock.plist` via `/opt/homebrew/bin/dockutil` |
+| **Local Server Target** | Local Vite preview server serving `dist/` production distribution |
+| **Loopback Security Boundary** | Strictly `127.0.0.1` (never `0.0.0.0`); verified via `lsof -nP -iTCP:4173 -sTCP:LISTEN` |
+| **Loopback Port Range** | Deterministic range `4173` through `4185` with POSIX socket binding detection |
+| **Local Base URL** | `http://127.0.0.1:<port>/Star_System_Planner/` (derived from `vite.config.ts`) |
+| **Stale-Build Protection** | Deterministic build identity stamp (`dist/.starsilk-source-revision`) generated on build and evaluated on launch by `scripts/check-build-freshness.mjs`. Wrapper rebuilds synchronously if `dist/index.html` is missing, stamp is missing, recorded HEAD differs from repo HEAD, or runtime source paths (`src/`, `public/`, `package.json`, `vite.config.ts`) are modified relative to the stamp. Rebuild failure produces a native `NSAlert` and exits cleanly rather than serving stale code. |
+| **Child Process Management** | Wrapper process spawns `node vite.js preview`; tracks PID; terminates *only* that specific child PID on window close/quit via `SIGTERM` with `SIGKILL` timeout fallback; zero global process killing (`killall node` / `pkill -f vite`) |
+| **Single-Instance Reopen** | Dock clicks while app is active trigger `applicationShouldHandleReopen`, focusing existing window rather than spawning duplicate servers |
+| **Window Specifications** | 1440x900 initial, minimum 960x600, resizable, full-size content view, obsidian `#03050a` background preventing white flash |
+| **Reproducible Scripts** | `npm run wrapper:mac:build`, `npm run wrapper:mac:install`, `npm run wrapper:mac:launch`, `npm run wrapper:mac:icon` |
+| **Rollback Preservation** | Preserved at `/tmp/Starsilk_Backup_Starsilk System Planner.app` and initial work tree backed up at `/tmp/starsilk-wrapper-backup-20260912-055552` |
+
+### Empirical Validation Telemetry
+
+1. **Test Suite & Typecheck (Current Runtime)**:
+   - `npm run verify`: **14 test suites, 87 / 87 tests passed (100%)**
+   - TypeScript `tsc --noEmit`: **0 errors**
+   - Production Vite + Workbox PWA build: **Passed**
+2. **Build Freshness & Stamp Integration**:
+   - `node scripts/check-build-freshness.mjs`: `FRESH: dist matches current HEAD 74c284d`
+   - Build identity stamp verified at `dist/.starsilk-source-revision`
+3. **Bundle Lint & Permissions**:
+   - `plutil -lint "/Users/andrew/Applications/Starsilk System Planner.app/Contents/Info.plist"`: `OK`
+   - `test -x ".../MacOS/Starsilk System Planner"`: `PASS`
+   - `test -f ".../Resources/AppIcon.icns"`: `PASS` (1024x1024 multi-res icon verified)
+4. **Cold Launch Verification**:
+   - Launched via `open -a "$HOME/Applications/Starsilk System Planner.app"` with no pre-existing server or terminal.
+   - Child process spawned: PID `98555` (`node .../vite.js preview --host 127.0.0.1 --port 4173 --strictPort`).
+   - Loopback listener verified: `node 98555 andrew 16u IPv4 ... TCP 127.0.0.1:4173 (LISTEN)`.
+   - Web view loaded `http://127.0.0.1:4173/Star_System_Planner/` with HTTP 200; zero asset 404s.
+   - Real window capture verified (`macos-wrapper/build/reconciled-window-evidence.png`): Canvas mounted, 12,000-star dense starfield active, tool rails active, orientation cube active.
+5. **Single-Instance Telemetry**:
+   - Repeated launch command executed while app was running.
+   - Dock reopen caught: `Reopen requested from Dock. Re-activating existing window.`
+   - Exactly one app process (`PID 98539`) and one child Vite process (`PID 98555`) confirmed; zero redundant listeners.
+6. **Clean Termination & Cleanup**:
+   - Issued standard application quit.
+   - Child process PID `98555` terminated cleanly.
+   - `lsof -nP -iTCP:4173 -sTCP:LISTEN`: verified 0 listeners remaining on port 4173.
+7. **Relaunch Verification**:
+   - Relaunched application cold a second time.
+   - Server became responsive and loaded in <1.5s with child PID `98649`.
+   - Shut down cleanly with zero orphaned processes.
+8. **Parable-Derived Desktop Mouse Controls**:
+   - Navigation policy verified via `src/tests/navigation-policy.test.ts` (5/5 tests) and interactive routing in WKWebView:
+     - Short LMB click -> body selection / tool activation
+     - LMB drag > 10px -> thresholded camera pan
+     - MMB drag -> camera orbit
+     - Shift + LMB / Alt + LMB drag -> camera orbit
+     - Mouse wheel / trackpad pinch -> cursor-centered focal zoom
+9. **Remaining Unknowns / Not Tested**:
+   - Physical S Pen / Samsung Tab S9 Ultra hardware pass-through in this desktop wrapper session (0 ADB devices connected; touch/stylus simulated and verified via unit tests and synthetic pointer event test harness).
