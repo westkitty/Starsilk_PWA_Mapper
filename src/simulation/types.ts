@@ -68,6 +68,7 @@ export interface CelestialBody {
   velocity: Vector3D; // km/s
   fixed?: boolean; // Anchored in space if true
   primaryId?: string | null; // Optional reference body ID
+  j2?: number; // Optional J2 zonal oblateness parameter (e.g. 1.08263e-3 for Earth)
 
   // Thermal & optical properties
   luminosityW?: number; // Watts (primarily for stars)

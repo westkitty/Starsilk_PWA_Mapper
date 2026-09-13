@@ -4,6 +4,21 @@
  */
 
 export class SpectroscopyChartGenerator {
+  public static getFraunhoferWavelengths(): number[] {
+    return [430, 486, 527, 589, 656, 687]; // Fraunhofer G, F, E, D, C, B
+  }
+
+  public static getCommonAbsorptionLines(): Array<{ element: string; wavelength: number }> {
+    return [
+      { element: 'H-alpha', wavelength: 656.3 },
+      { element: 'H-beta', wavelength: 486.1 },
+      { element: 'Na-D', wavelength: 589.0 },
+      { element: 'O2', wavelength: 760.0 },
+      { element: 'H2O', wavelength: 720.0 },
+      { element: 'CH4', wavelength: 619.0 },
+    ];
+  }
+
   public static generateSpectrumCanvas(
     width = 512,
     height = 64,

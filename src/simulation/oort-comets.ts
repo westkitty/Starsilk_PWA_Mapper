@@ -1,6 +1,6 @@
 /**
- * Oort Cloud Cometary Injection & Galactic Tide Perturbations.
- * Simulates high-aphelion trans-Neptunian bodies perturbed into near-parabolic sun-grazing trajectories.
+ * Oort Cloud Cometary Orbit Injection Generator.
+ * Generates high-aphelion trans-Neptunian inbound parabolic trajectories toward inner system perihelion.
  */
 
 import { Vector3 } from 'three';

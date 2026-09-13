@@ -18,6 +18,7 @@ export const DysonSwarmPlannerModal: React.FC<Props> = ({ isOpen, onClose }) => 
   }, [collectors, radiusAu]);
 
   const deploySwarm = () => {
+    EventBus.emit('scene:toggle_dyson', { visible: true, radiusAu });
     EventBus.emit('ui:toast', {
       type: 'success',
       message: `Dyson Swarm Deployed! Harvesting ${stats.powerHarvestedWatts.toExponential(2)} Watts (Kardashev ${stats.kardashevLevel.toFixed(2)})`,

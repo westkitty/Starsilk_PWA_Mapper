@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CelestialBody } from '../simulation/types';
 import { exportEphemerisToHorizonsCsv } from '../simulation/ephemeris';
+import { BinaryStateSerializer } from '../persistence/binary-serializer';
 
 interface EphemerisExportModalProps {
   isOpen: boolean;
@@ -33,6 +34,17 @@ export const EphemerisExportModal: React.FC<EphemerisExportModalProps> = ({
     const a = document.createElement('a');
     a.href = url;
     a.download = `starsilk_ephemeris_${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadBinary = () => {
+    const buffer = BinaryStateSerializer.serialize(bodies);
+    const blob = new Blob([buffer], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `starsilk_state_${Date.now()}.ssp.bin`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -96,6 +108,13 @@ export const EphemerisExportModal: React.FC<EphemerisExportModalProps> = ({
           </button>
 
           <div className="flex space-x-2">
+            <button
+              onClick={handleDownloadBinary}
+              className="rounded bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-600 transition"
+              title="Fast packed ArrayBuffer binary state (BACK35)"
+            >
+              Download .BIN
+            </button>
             <button
               onClick={handleDownload}
               className="rounded bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-500 transition"

@@ -852,9 +852,35 @@ export const App: React.FC = () => {
     };
     window.addEventListener('resize', handleResize);
 
+    // Astrodynamic Visualizer & FX Subscriptions (Iteration 3)
+    const unsubAberration = eventBus.on('fx:aberration_toggle', ({ enabled }) => {
+      sceneMgr.setRelativisticAberration(enabled);
+    });
+    const unsubCme = eventBus.on('scene:trigger_cme', ({ origin }) => {
+      sceneMgr.triggerCME(origin);
+    });
+    const unsubDyson = eventBus.on('scene:toggle_dyson', ({ visible, radiusAu }) => {
+      sceneMgr.setDysonRingVisible(visible, radiusAu);
+    });
+    const unsubMagneto = eventBus.on('scene:toggle_magnetosphere', ({ visible, targetBodyId }) => {
+      sceneMgr.setMagnetosphereVisible(visible, targetBodyId);
+    });
+    const unsubRoche = eventBus.on('scene:toggle_roche_lobes', ({ visible }) => {
+      sceneMgr.setRocheLobesVisible(visible);
+    });
+    const unsubElevator = eventBus.on('scene:toggle_space_elevator', ({ visible, targetBodyId }) => {
+      sceneMgr.setSpaceElevatorVisible(visible, targetBodyId);
+    });
+
     return () => {
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', handleResize);
+      unsubAberration();
+      unsubCme();
+      unsubDyson();
+      unsubMagneto();
+      unsubRoche();
+      unsubElevator();
       pointerMgr.destroy();
       futureClient.destroy();
       sceneMgr.dispose();
@@ -1407,6 +1433,8 @@ export const App: React.FC = () => {
             onOpenMagnetosphere={() => setIsMagnetosphereOpen(true)}
             onOpenSpaceElevator={() => setIsSpaceElevatorOpen(true)}
             onOpenTisserand={() => setIsTisserandOpen(true)}
+            onOpenPoynting={() => setIsPoyntingOpen(true)}
+            onOpenGravityGradient={() => setIsGravityGradientOpen(true)}
           />
         )}
 

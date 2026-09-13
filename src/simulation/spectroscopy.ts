@@ -1,6 +1,7 @@
 /**
- * Planetary Atmospheric Spectroscopy & Biosignature Analysis.
- * Computes chemical constituent absorption profiles (H2O, CO2, CH4, O2, N2, O3) and biosignature index.
+ * Planetary Atmospheric Spectroscopy & Biosignature Heuristic Proxy Model.
+ * Computes estimated constituent abundances (H2O, CO2, CH4, O2, N2) and disequilibrium
+ * biosignature index using planetary temperature, pressure, and water coverage proxies.
  */
 
 export interface AtmosphericSpectrum {

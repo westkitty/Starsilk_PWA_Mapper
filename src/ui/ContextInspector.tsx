@@ -23,6 +23,8 @@ interface ContextInspectorProps {
   onOpenMagnetosphere?: () => void;
   onOpenSpaceElevator?: () => void;
   onOpenTisserand?: () => void;
+  onOpenPoynting?: () => void;
+  onOpenGravityGradient?: () => void;
 }
 
 export const ContextInspector: React.FC<ContextInspectorProps> = ({
@@ -41,6 +43,8 @@ export const ContextInspector: React.FC<ContextInspectorProps> = ({
   onOpenMagnetosphere,
   onOpenSpaceElevator,
   onOpenTisserand,
+  onOpenPoynting,
+  onOpenGravityGradient,
 }) => {
   if (!selectedBody) return null;
 
@@ -443,6 +447,44 @@ export const ContextInspector: React.FC<ContextInspectorProps> = ({
               title="Tisserand Invariant Calculator"
             >
               ☄️ TISSERAND
+            </button>
+          )}
+
+          {onOpenPoynting && (
+            <button
+              onClick={onOpenPoynting}
+              style={{
+                background: 'rgba(234, 179, 8, 0.1)',
+                border: '1px solid rgba(234, 179, 8, 0.3)',
+                color: '#eab308',
+                padding: '6px',
+                borderRadius: '6px',
+                fontSize: '10px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+              title="Poynting-Robertson Radiative Drag (UI42)"
+            >
+              💫 POYNTING
+            </button>
+          )}
+
+          {onOpenGravityGradient && (
+            <button
+              onClick={onOpenGravityGradient}
+              style={{
+                background: 'rgba(99, 102, 241, 0.1)',
+                border: '1px solid rgba(99, 102, 241, 0.3)',
+                color: '#818cf8',
+                padding: '6px',
+                borderRadius: '6px',
+                fontSize: '10px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+              title="Gravity Gradient Torque (UI45)"
+            >
+              🌊 GRAV GRADIENT
             </button>
           )}
         </div>

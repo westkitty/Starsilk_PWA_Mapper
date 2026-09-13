@@ -1,6 +1,6 @@
 /**
- * SIMD-Friendly Batch Vector Math Operations on Flat Float64Arrays.
- * Packed format: [x0, y0, z0, x1, y1, z1, ...]
+ * Contiguous Float64Array Batch Vector Buffer Operations.
+ * Cache-friendly flat array arithmetic: [x0, y0, z0, x1, y1, z1, ...]
  */
 
 export class SimdVectorOps {

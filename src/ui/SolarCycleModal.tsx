@@ -17,6 +17,7 @@ export const SolarCycleModal: React.FC<Props> = ({ isOpen, onClose }) => {
   }, [epochYears]);
 
   const triggerCME = () => {
+    EventBus.emit('scene:trigger_cme', {});
     EventBus.emit('ui:toast', {
       type: 'warning',
       message: `Coronal Mass Ejection Erupted! Sunspot Group: ${state.sunspotNumber}`,

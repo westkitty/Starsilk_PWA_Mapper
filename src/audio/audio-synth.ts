@@ -7,10 +7,16 @@
  * - No external sound assets or bandwidth required.
  */
 
+import { Vector3 } from 'three';
+import { SpatialAudioNode } from './spatial-audio-node';
+import { RadioAstronomyAudio } from './radio-pulsar-audio';
+
 export class AudioSynthesizer {
   private ctx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private masterGain: GainNode | null = null;
+  private spatialNode: SpatialAudioNode | null = null;
+  private radioAudio: RadioAstronomyAudio | null = null;
   public isEnabled: boolean = false;
 
   private getContext(): AudioContext | null {
@@ -23,6 +29,8 @@ export class AudioSynthesizer {
       this.analyser.smoothingTimeConstant = 0.5;
       this.masterGain.connect(this.analyser);
       this.analyser.connect(this.ctx.destination);
+      this.spatialNode = new SpatialAudioNode(this.ctx);
+      this.radioAudio = new RadioAstronomyAudio(this.ctx);
     }
     if (this.ctx && this.ctx.state === 'suspended') {
       this.ctx.resume();
@@ -263,6 +271,43 @@ export class AudioSynthesizer {
     osc.start();
     osc.stop(ctx.currentTime + 0.42);
   }
+
+  /**
+   * BACK43: Positional 3D Web Audio listener orientation update.
+   */
+  public updateSpatialListener(cameraPos: Vector3, forward: Vector3, up: Vector3): void {
+    if (!this.isEnabled) return;
+    this.getContext();
+    this.spatialNode?.updateListener(cameraPos, forward, up);
+  }
+
+  /**
+   * BACK43: Binds spatial sound source position to celestial coordinates.
+   */
+  public updateSpatialSource(pos: Vector3): void {
+    if (!this.isEnabled) return;
+    this.getContext();
+    this.spatialNode?.updatePosition(pos);
+  }
+
+  /**
+   * ASSET43: Radio astronomy pulsar blip sound.
+   */
+  public playPulsarPulse(frequencyHz = 800, durationMs = 15): void {
+    if (!this.isEnabled) return;
+    this.getContext();
+    this.radioAudio?.playPulsarPulse(frequencyHz, durationMs);
+  }
+
+  /**
+   * ASSET43: Magnetospheric whistler dispersion sweep.
+   */
+  public playWhistlerSweep(startFreq = 4000, endFreq = 400, durationSec = 1.2): void {
+    if (!this.isEnabled) return;
+    this.getContext();
+    this.radioAudio?.playWhistlerSweep(startFreq, endFreq, durationSec);
+  }
 }
+
 
 export const audioSynth = new AudioSynthesizer();

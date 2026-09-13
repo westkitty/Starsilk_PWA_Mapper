@@ -15,6 +15,8 @@
 
 import { CelestialBody } from './types';
 import { G_KM } from './units';
+import { Vector3 } from 'three';
+import { SphericalHarmonics } from './spherical-harmonics';
 
 // Softening distance squared in km^2 to prevent gravitational singularities
 const SOFTENING_SQ_KM = 1000.0; // 1000 km^2 softening
@@ -61,6 +63,19 @@ export function computeAccelerations(bodies: CelestialBody[]): AccelerationVecto
         accs[i].ax += dx * factorI;
         accs[i].ay += dy * factorI;
         accs[i].az += dz * factorI;
+
+        // Perturbative J2 oblateness acceleration from body j on body i
+        if (bj.j2 && bj.j2 > 0 && bj.radiusKm > 0) {
+          const rFromJ = new Vector3(-dx, -dy, -dz);
+          const j2Acc = SphericalHarmonics.computeJ2Acceleration(rFromJ, {
+            mu: G_KM * bj.massKg,
+            radius: bj.radiusKm,
+            j2: bj.j2,
+          });
+          accs[i].ax += j2Acc.x;
+          accs[i].ay += j2Acc.y;
+          accs[i].az += j2Acc.z;
+        }
       }
 
       if (!bj.fixed && bi.massKg > 0) {
@@ -68,6 +83,19 @@ export function computeAccelerations(bodies: CelestialBody[]): AccelerationVecto
         accs[j].ax -= dx * factorJ;
         accs[j].ay -= dy * factorJ;
         accs[j].az -= dz * factorJ;
+
+        // Perturbative J2 oblateness acceleration from body i on body j
+        if (bi.j2 && bi.j2 > 0 && bi.radiusKm > 0) {
+          const rFromI = new Vector3(dx, dy, dz);
+          const j2Acc = SphericalHarmonics.computeJ2Acceleration(rFromI, {
+            mu: G_KM * bi.massKg,
+            radius: bi.radiusKm,
+            j2: bi.j2,
+          });
+          accs[j].ax += j2Acc.x;
+          accs[j].ay += j2Acc.y;
+          accs[j].az += j2Acc.z;
+        }
       }
     }
   }

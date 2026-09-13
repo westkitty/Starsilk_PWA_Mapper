@@ -39,6 +39,24 @@ import {
   layoutSmartLabels,
   resolveSemanticLod,
 } from '../ui/smart-body-labels';
+import { calculateDopplerTint } from './doppler-shift';
+import { BowShockVisualizer } from './bow-shock';
+import { DysonRingMesh } from './dyson-ring-mesh';
+import { RelativisticJetMesh } from './relativistic-jets';
+import { CoronalMassEjectionVisualizer } from './coronal-mass-ejection';
+import { ZodiacalDustCloud } from './zodiacal-dust-cloud';
+import { SpaceElevatorVisualizer } from './space-elevator-mesh';
+import { TisserandContourMesh } from './tisserand-contour-mesh';
+import { RocheLobesVisualizer } from './jacobi-roche-lobes';
+import { DipoleFieldLinesVisualizer } from './magnetic-dipole-fieldlines';
+import { GasGiantStormMesh } from './gas-giant-storm-mesh';
+import { OortCloudVisualizer } from './oort-cloud-mesh';
+import { VanAllenBeltsVisualizer } from './van-allen-belts';
+import { MemoryGovernor } from '../core/memory-governor';
+import { OcclusionCuller } from './occlusion-culler';
+import { InstancedBillboardPool } from './instanced-billboard-pool';
+import { HorizonContactShading } from './screen-space-ambient';
+import { SupernovaEngine } from '../simulation/supernova';
 
 export type CameraViewMode = 'inertial' | 'focus_selected' | 'follow_selected' | 'top_down';
 
@@ -63,6 +81,23 @@ export class SceneManager {
   public encounterOverlay: EncounterOverlay;
   public orbitalPlaneGizmo: OrbitalPlaneGizmo;
   public smartBodyLabels: SmartBodyLabels;
+  public occlusionCuller: OcclusionCuller;
+  public instancedBillboardPool: InstancedBillboardPool;
+  public zodiacalDustCloud: ZodiacalDustCloud;
+  public oortCloudVisualizer: OortCloudVisualizer;
+  public bowShockVisualizer: BowShockVisualizer | null = null;
+  public dipoleFieldLinesVisualizer: DipoleFieldLinesVisualizer | null = null;
+  public vanAllenBeltsVisualizer: VanAllenBeltsVisualizer | null = null;
+  public magnetosphereTargetId: string | null = null;
+  public dysonRingMesh: DysonRingMesh | null = null;
+  public cmeVisualizers: CoronalMassEjectionVisualizer[] = [];
+  public spaceElevatorVisualizer: SpaceElevatorVisualizer | null = null;
+  public spaceElevatorBodyId: string | null = null;
+  public rocheLobesVisualizer: RocheLobesVisualizer | null = null;
+  public tisserandContourMesh: TisserandContourMesh | null = null;
+  public relativisticAberrationEnabled: boolean = false;
+  private memoryCheckTimer = 0;
+  private pruneUnsub: (() => void) | null = null;
 
   private bodyMeshes: Map<string, THREE.Group> = new Map();
   private latestBodies: CelestialBody[] = [];
@@ -167,6 +202,23 @@ export class SceneManager {
 
     this.collapsePresentation = new CollapsePresentation();
     this.scene.add(this.collapsePresentation.getGroup());
+
+    this.occlusionCuller = new OcclusionCuller();
+
+    this.instancedBillboardPool = new InstancedBillboardPool(500);
+    this.scene.add(this.instancedBillboardPool.mesh);
+
+    this.zodiacalDustCloud = new ZodiacalDustCloud(25.0, 180.0);
+    this.scene.add(this.zodiacalDustCloud.mesh);
+
+    this.oortCloudVisualizer = new OortCloudVisualizer(450.0, 950.0, 1500);
+    this.scene.add(this.oortCloudVisualizer.points);
+
+    this.pruneUnsub = MemoryGovernor.onPruneRequested((severity) => {
+      if (severity === 'aggressive') {
+        this.trajectoryRenderer.clearAll();
+      }
+    });
 
     this.applySemanticLodVisibility();
   }
@@ -275,7 +327,89 @@ export class SceneManager {
         this.updateBodyRings(b, group, dispRadius, primaryStar);
       }
 
+      // ASSET33: Relativistic polar jet meshes on black holes and compact remnants
+      let jetGroup = group.getObjectByName('relativisticJet') as THREE.Group;
+      if (b.type === 'black_hole') {
+        if (!jetGroup) {
+          const jet = new RelativisticJetMesh(dispRadius * 10, dispRadius * 0.12, dispRadius * 0.7);
+          jet.group.name = 'relativisticJet';
+          group.add(jet.group);
+        }
+      } else if (jetGroup) {
+        group.remove(jetGroup);
+      }
+
+      // ASSET42: Gas Giant storm vortex mesh
+      let stormMesh = group.getObjectByName('gasGiantStorm') as THREE.Mesh;
+      if (b.classification === 'gas_giant') {
+        if (!stormMesh) {
+          const storm = new GasGiantStormMesh(dispRadius * 0.3);
+          storm.mesh.name = 'gasGiantStorm';
+          storm.mesh.position.set(dispRadius * 0.6, -dispRadius * 0.2, dispRadius * 0.6);
+          group.add(storm.mesh);
+        }
+      } else if (stormMesh) {
+        group.remove(stormMesh);
+      }
+
+      // UI33: Relativistic Lorentz Contraction & Doppler Shift FX
+      if (this.relativisticAberrationEnabled && coreMesh) {
+        const speed = Math.hypot(b.velocity.x, b.velocity.y, b.velocity.z);
+        const c_km_s = 299792.458;
+        const beta = Math.min(0.95, speed / c_km_s);
+        const gamma = 1.0 / Math.sqrt(Math.max(0.05, 1.0 - beta * beta));
+        const contraction = Math.max(0.2, 1.0 / gamma);
+        coreMesh.scale.set(dispRadius * contraction, dispRadius, dispRadius);
+
+        const camDir = new THREE.Vector3().subVectors(this.camera.position, group.position).normalize();
+        const hex = parseInt((b.color || '#3b82f6').replace('#', '0x'), 16) || 0x38bdf8;
+        const tinted = calculateDopplerTint(b.velocity, camDir, hex);
+        if ((coreMesh.material as any).color) {
+          (coreMesh.material as any).color.copy(tinted);
+        }
+      }
+
+      // BACK41: Analytical horizon contact occlusion shading check against primary star
+      if (primaryStar && primaryStar.id !== b.id && coreMesh) {
+        const toStar = new THREE.Vector3(
+          primaryStar.position.x - b.position.x,
+          primaryStar.position.y - b.position.y,
+          primaryStar.position.z - b.position.z
+        );
+        const occlusionFactor = HorizonContactShading.computeContactOcclusion(
+          new THREE.Vector3(0, 1, 0),
+          toStar,
+          primaryStar.radiusKm
+        );
+        if (occlusionFactor < 0.99 && coreMesh.material instanceof THREE.MeshBasicMaterial) {
+          coreMesh.material.opacity = Math.max(0.3, occlusionFactor);
+        }
+      }
+
       this.applyBodyLodVisibility(group, b.id === this.selectedBodyId);
+    }
+
+    // Update Space Elevator position if active
+    if (this.spaceElevatorVisualizer && this.spaceElevatorBodyId) {
+      const parentGroup = this.bodyMeshes.get(this.spaceElevatorBodyId);
+      if (parentGroup) {
+        this.spaceElevatorVisualizer.group.position.copy(parentGroup.position);
+      }
+    }
+
+    // Update Magnetosphere overlays if active
+    if (this.bowShockVisualizer && this.magnetosphereTargetId) {
+      const targetGroup = this.bodyMeshes.get(this.magnetosphereTargetId);
+      const starGroup = primaryStar ? this.bodyMeshes.get(primaryStar.id) : null;
+      if (targetGroup && starGroup) {
+        this.bowShockVisualizer.updateOrientation(targetGroup.position, starGroup.position);
+        if (this.dipoleFieldLinesVisualizer) {
+          this.dipoleFieldLinesVisualizer.group.position.copy(targetGroup.position);
+        }
+        if (this.vanAllenBeltsVisualizer) {
+          this.vanAllenBeltsVisualizer.group.position.copy(targetGroup.position);
+        }
+      }
     }
 
     this.gravityGrid.update(bodies);
@@ -489,6 +623,22 @@ export class SceneManager {
       const ndcZ = this.projectionScratch.z;
       if (ndcZ < -1 || ndcZ > 1 || Math.abs(ndcX) > 1.04 || Math.abs(ndcY) > 1.04) continue;
 
+      // BACK34: Occlusion culling against opaque foreground planetary spheres
+      let isOccluded = false;
+      for (const other of this.latestBodies) {
+        if (other.id !== body.id && other.radiusKm > 500) {
+          const otherGroup = this.bodyMeshes.get(other.id);
+          if (otherGroup) {
+            const dispR = this.scaleTransform.getDisplayRadius(other.radiusKm, other.type);
+            if (this.occlusionCuller.isOccludedByBody(this.camera.position, group.position, otherGroup.position, dispR)) {
+              isOccluded = true;
+              break;
+            }
+          }
+        }
+      }
+      if (isOccluded) continue;
+
       const selected = body.id === this.selectedBodyId;
       const hovered = body.id === this.hoveredBodyId;
       const isPrimary = body.id === primary?.id;
@@ -618,6 +768,37 @@ export class SceneManager {
       const targetGroup = targetId ? this.bodyMeshes.get(targetId) || null : null;
       this.collapsePresentation.update(deltaSec, targetGroup);
     }
+
+    // ASSET34: Update active Coronal Mass Ejections
+    for (let i = this.cmeVisualizers.length - 1; i >= 0; i--) {
+      const cme = this.cmeVisualizers[i];
+      cme.update(deltaSec);
+      if (cme.isComplete) {
+        this.scene.remove(cme.points);
+        cme.points.geometry.dispose();
+        this.cmeVisualizers.splice(i, 1);
+      }
+    }
+
+    // ASSET42: Rotate gas giant storm vortexes
+    for (const [, group] of this.bodyMeshes) {
+      const storm = group.getObjectByName('gasGiantStorm');
+      if (storm) {
+        storm.rotation.z += 0.5 * deltaSec;
+      }
+    }
+
+    // ASSET36: Space Elevator synchronous rotation
+    if (this.spaceElevatorVisualizer) {
+      this.spaceElevatorVisualizer.updateRotation(this.clock.getElapsedTime() * 0.15);
+    }
+
+    // BACK33: Memory Governor periodic health check
+    this.memoryCheckTimer += deltaSec;
+    if (this.memoryCheckTimer >= 5.0) {
+      this.memoryCheckTimer = 0;
+      MemoryGovernor.checkAndPrune();
+    }
   }
 
   public playCollapseSequence(bodyId: string, onComplete?: () => void): void {
@@ -625,8 +806,132 @@ export class SceneManager {
     const targetPos = group ? group.position.clone() : new THREE.Vector3();
     const core = group?.getObjectByName('core') as THREE.Mesh | undefined;
     const initialR = core ? core.scale.x : 10;
+
+    // GAME44: Supernova core-collapse threshold evaluation
+    const targetBody = this.latestBodies.find(b => b.id === bodyId);
+    const collapseReport = targetBody ? SupernovaEngine.evaluateStellarCollapse(targetBody) : null;
+    const rippleIntensity = collapseReport?.isSupernovaTriggered ? 4.5 : 1.8;
+
     this.collapsePresentation.start({ targetPos, initialRadius: initialR, onComplete }, bodyId);
-    this.gravityGrid.triggerEventRipple(targetPos.x, targetPos.z, 1.8);
+    this.gravityGrid.triggerEventRipple(targetPos.x, targetPos.z, rippleIntensity);
+  }
+
+  // UI33: Toggle Relativistic Aberration & Lorentz FX
+  public setRelativisticAberration(enabled: boolean): void {
+    this.relativisticAberrationEnabled = enabled;
+  }
+
+  public isRelativisticAberration(): boolean {
+    return this.relativisticAberrationEnabled;
+  }
+
+  // ASSET34: Trigger Coronal Mass Ejection Visualizer
+  public triggerCME(origin?: THREE.Vector3): void {
+    let orig: THREE.Vector3;
+    if (origin) {
+      orig = origin;
+    } else if (this.latestBodies[0]) {
+      const p = this.scaleTransform.getDisplayPosition(this.latestBodies[0].position);
+      orig = new THREE.Vector3(p.x, p.y, p.z);
+    } else {
+      orig = new THREE.Vector3();
+    }
+    const cme = new CoronalMassEjectionVisualizer(orig, 60.0, 2.5, 1200);
+    this.cmeVisualizers.push(cme);
+    this.scene.add(cme.points);
+  }
+
+  // ASSET32: Toggle Dyson Ring Megastructure Mesh
+  public setDysonRingVisible(visible: boolean, radiusAu: number = 0.4): void {
+    if (visible) {
+      if (!this.dysonRingMesh) {
+        this.dysonRingMesh = new DysonRingMesh(radiusAu * 60.0, 2.5);
+        this.scene.add(this.dysonRingMesh.mesh);
+      }
+      this.dysonRingMesh.mesh.visible = true;
+    } else if (this.dysonRingMesh) {
+      this.dysonRingMesh.mesh.visible = false;
+    }
+  }
+
+  // ASSET31, ASSET40, ASSET45: Magnetosphere, Dipole Field Lines, & Van Allen Belts
+  public setMagnetosphereVisible(visible: boolean, targetBodyId?: string): void {
+    this.magnetosphereTargetId = targetBodyId || null;
+    if (visible && targetBodyId) {
+      const targetBody = this.latestBodies.find(b => b.id === targetBodyId);
+      const dispR = targetBody ? this.scaleTransform.getDisplayRadius(targetBody.radiusKm, targetBody.type) : 2.0;
+
+      if (!this.bowShockVisualizer) {
+        this.bowShockVisualizer = new BowShockVisualizer(dispR * 2.0);
+        this.scene.add(this.bowShockVisualizer.group);
+      }
+      if (!this.dipoleFieldLinesVisualizer) {
+        this.dipoleFieldLinesVisualizer = new DipoleFieldLinesVisualizer(dispR);
+        this.scene.add(this.dipoleFieldLinesVisualizer.group);
+      }
+      if (!this.vanAllenBeltsVisualizer) {
+        this.vanAllenBeltsVisualizer = new VanAllenBeltsVisualizer(dispR);
+        this.scene.add(this.vanAllenBeltsVisualizer.group);
+      }
+      this.bowShockVisualizer.group.visible = true;
+      this.dipoleFieldLinesVisualizer.group.visible = true;
+      this.vanAllenBeltsVisualizer.group.visible = true;
+    } else {
+      if (this.bowShockVisualizer) this.bowShockVisualizer.group.visible = false;
+      if (this.dipoleFieldLinesVisualizer) this.dipoleFieldLinesVisualizer.group.visible = false;
+      if (this.vanAllenBeltsVisualizer) this.vanAllenBeltsVisualizer.group.visible = false;
+    }
+  }
+
+  // ASSET36: Space Elevator Tether Visualizer
+  public setSpaceElevatorVisible(visible: boolean, targetBodyId?: string): void {
+    this.spaceElevatorBodyId = targetBodyId || null;
+    if (visible && targetBodyId) {
+      const targetBody = this.latestBodies.find(b => b.id === targetBodyId);
+      const dispR = targetBody ? this.scaleTransform.getDisplayRadius(targetBody.radiusKm, targetBody.type) : 2.0;
+      if (!this.spaceElevatorVisualizer) {
+        this.spaceElevatorVisualizer = new SpaceElevatorVisualizer(dispR, dispR * 5.0);
+        this.scene.add(this.spaceElevatorVisualizer.group);
+      }
+      this.spaceElevatorVisualizer.group.visible = true;
+    } else if (this.spaceElevatorVisualizer) {
+      this.spaceElevatorVisualizer.group.visible = false;
+    }
+  }
+
+  // ASSET39: Roche Lobes Visualizer
+  public setRocheLobesVisible(visible: boolean): void {
+    if (visible) {
+      if (!this.rocheLobesVisualizer && this.latestBodies.length >= 2) {
+        const p1 = this.bodyMeshes.get(this.latestBodies[0].id)?.position || new THREE.Vector3(-10, 0, 0);
+        const p2 = this.bodyMeshes.get(this.latestBodies[1].id)?.position || new THREE.Vector3(10, 0, 0);
+        const r1 = this.scaleTransform.getDisplayRadius(this.latestBodies[0].radiusKm, this.latestBodies[0].type) * 2.5;
+        const r2 = this.scaleTransform.getDisplayRadius(this.latestBodies[1].radiusKm, this.latestBodies[1].type) * 2.5;
+        this.rocheLobesVisualizer = new RocheLobesVisualizer(p1, p2, r1, r2);
+        this.scene.add(this.rocheLobesVisualizer.group);
+      }
+      if (this.rocheLobesVisualizer) this.rocheLobesVisualizer.group.visible = true;
+    } else if (this.rocheLobesVisualizer) {
+      this.rocheLobesVisualizer.group.visible = false;
+    }
+  }
+
+  // ASSET37: Tisserand Phase-Space Contour Mesh
+  public setTisserandContour(perturberA: number, targetT: number = 3.0): void {
+    if (this.tisserandContourMesh) {
+      this.scene.remove(this.tisserandContourMesh.line);
+      this.tisserandContourMesh.line.geometry.dispose();
+    }
+    this.tisserandContourMesh = new TisserandContourMesh(perturberA, targetT);
+    this.scene.add(this.tisserandContourMesh.line);
+  }
+
+  public clearTisserandContour(): void {
+    if (this.tisserandContourMesh) {
+      this.scene.remove(this.tisserandContourMesh.line);
+      this.tisserandContourMesh.line.geometry.dispose();
+      this.tisserandContourMesh = null;
+    }
   }
 
   public render(): void {
@@ -744,6 +1049,44 @@ export class SceneManager {
     this.lagrangeOverlay.dispose();
     this.trajectoryRenderer.dispose();
     this.collapsePresentation.dispose();
+
+    if (this.pruneUnsub) {
+      this.pruneUnsub();
+      this.pruneUnsub = null;
+    }
+    if (this.zodiacalDustCloud) {
+      this.scene.remove(this.zodiacalDustCloud.mesh);
+      this.zodiacalDustCloud.mesh.geometry.dispose();
+    }
+    if (this.oortCloudVisualizer) {
+      this.scene.remove(this.oortCloudVisualizer.points);
+      this.oortCloudVisualizer.points.geometry.dispose();
+    }
+    if (this.instancedBillboardPool) {
+      this.scene.remove(this.instancedBillboardPool.mesh);
+      this.instancedBillboardPool.mesh.geometry.dispose();
+    }
+    if (this.dysonRingMesh) {
+      this.scene.remove(this.dysonRingMesh.mesh);
+      this.dysonRingMesh.mesh.geometry.dispose();
+    }
+    if (this.bowShockVisualizer) {
+      this.scene.remove(this.bowShockVisualizer.group);
+    }
+    if (this.dipoleFieldLinesVisualizer) {
+      this.scene.remove(this.dipoleFieldLinesVisualizer.group);
+    }
+    if (this.vanAllenBeltsVisualizer) {
+      this.scene.remove(this.vanAllenBeltsVisualizer.group);
+    }
+    if (this.spaceElevatorVisualizer) {
+      this.scene.remove(this.spaceElevatorVisualizer.group);
+    }
+    if (this.rocheLobesVisualizer) {
+      this.scene.remove(this.rocheLobesVisualizer.group);
+    }
+    this.clearTisserandContour();
+
     for (const [, group] of this.bodyMeshes) {
       this.scene.remove(group);
       this.disposeGroup(group);

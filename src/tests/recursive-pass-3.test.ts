@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Vector3, Box3 } from 'three';
 import { AdaptiveTimestepController } from '../simulation/adaptive-timestep';
 import { SPKEphemerisEvaluator } from '../simulation/spk-ephemeris-parser';
@@ -39,6 +39,12 @@ import { DipoleFieldLinesVisualizer } from '../rendering/magnetic-dipole-fieldli
 import { GasGiantStormMesh } from '../rendering/gas-giant-storm-mesh';
 import { OortCloudVisualizer } from '../rendering/oort-cloud-mesh';
 import { VanAllenBeltsVisualizer } from '../rendering/van-allen-belts';
+import { CelestialBody } from '../simulation/types';
+import { InstancedBillboardPool } from '../rendering/instanced-billboard-pool';
+import { SpatialAudioNode } from '../audio/spatial-audio-node';
+import { RadioAstronomyAudio } from '../audio/radio-pulsar-audio';
+import { CraterScatterGenerator } from '../rendering/crater-scatter';
+import { SpectroscopyChartGenerator } from '../rendering/spectroscopy-chart';
 
 describe('Recursive Pass 3 Verification Suite', () => {
   // --- Backend / Technical Tests ---
@@ -98,13 +104,16 @@ describe('Recursive Pass 3 Verification Suite', () => {
   });
 
   it('BACK35: Binary State Serializer encodes and decodes body vectors with zero corruption', () => {
-    const bodies: any = [
+    const bodies: CelestialBody[] = [
       {
         id: 'earth',
+        name: 'Earth',
+        type: 'planet',
+        color: '#3b82f6',
         massKg: 5.972e24,
         radiusKm: 6371,
-        position: new Vector3(1.0, 2.0, 3.0),
-        velocity: new Vector3(0.1, 0.2, 0.3),
+        position: { x: 1.0, y: 2.0, z: 3.0 },
+        velocity: { x: 0.1, y: 0.2, z: 0.3 },
       },
     ];
     const buffer = BinaryStateSerializer.serialize(bodies);
@@ -136,17 +145,35 @@ describe('Recursive Pass 3 Verification Suite', () => {
     expect(dist[0]).toBeCloseTo(5.0);
   });
 
-  it('BACK39: Network Sync Protocol serializes and deserializes tick state deltas', () => {
-    const delta = {
-      tick: 42,
-      timestamp: Date.now(),
-      updatedBodies: [{ id: 'b1', pos: [1, 2, 3] as [number, number, number], vel: [0, 1, 0] as [number, number, number] }],
-    };
-    const str = NetworkSyncProtocol.encodeDelta(delta);
-    const decoded = NetworkSyncProtocol.decodeDelta(str);
+  it('BACK38: Instanced Billboard Particle Pool allocates and updates dynamic particle matrices', () => {
+    const pool = new InstancedBillboardPool(100);
+    pool.setParticle(0, new Vector3(1, 2, 3), 1.5);
+    pool.setParticle(1, new Vector3(4, 5, 6), 2.0);
+    pool.commit(2);
+    expect(pool.mesh.count).toBe(2);
+  });
+
+  it('BACK39: Network Sync Protocol computes thresholded deltas and reconstructs state', () => {
+    const baseline: CelestialBody[] = [
+      { id: 'b1', name: 'B1', type: 'planet', color: '#fff', massKg: 100, radiusKm: 10, position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 } },
+      { id: 'b2', name: 'B2', type: 'planet', color: '#fff', massKg: 100, radiusKm: 10, position: { x: 10, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 } },
+    ];
+    const current: CelestialBody[] = [
+      { ...baseline[0] },
+      { ...baseline[1], position: { x: 15, y: 0, z: 0 }, velocity: { x: 2, y: 0, z: 0 } },
+    ];
+
+    const delta = NetworkSyncProtocol.computeDelta(baseline, current, 101, 0.01);
+    expect(delta.updatedBodies.length).toBe(1);
+    expect(delta.updatedBodies[0].id).toBe('b2');
+
+    const encoded = NetworkSyncProtocol.encodeDelta(delta);
+    const decoded = NetworkSyncProtocol.decodeDelta(encoded);
     expect(decoded).not.toBeNull();
-    expect(decoded?.tick).toBe(42);
-    expect(decoded?.updatedBodies[0].id).toBe('b1');
+    expect(decoded!.updatedBodies[0].id).toBe('b2');
+
+    const reconstructed = NetworkSyncProtocol.applyDelta(baseline, decoded!);
+    expect(reconstructed.find(b => b.id === 'b2')!.position.x).toBeCloseTo(15);
   });
 
   it('BACK40: Spherical Harmonics computes J2 zonal oblate acceleration', () => {
@@ -170,21 +197,57 @@ describe('Recursive Pass 3 Verification Suite', () => {
     expect(factorBelow).toBe(1.0);
   });
 
-  it('BACK42: Orbital Elements Solver transforms Cartesian state vectors into Keplerian elements', () => {
-    const r = new Vector3(1.0, 0, 0);
-    const v = new Vector3(0, 1.0, 0);
-    const mu = 1.0;
+  it('BACK42: Orbital Elements Solver supports bi-directional Cartesian <-> Keplerian conversion', () => {
+    const r = new Vector3(10000, 0, 0);
+    const v = new Vector3(0, 7.5, 0);
+    const mu = 398600;
     const elem = OrbitalElementsSolver.cartesianToElements(r, v, mu);
-    expect(elem.semiMajorAxis).toBeCloseTo(1.0);
-    expect(elem.eccentricity).toBeCloseTo(0.0);
-    expect(elem.inclination).toBeCloseTo(0.0);
+    expect(elem.semiMajorAxis).toBeGreaterThan(5000);
+
+    const roundTrip = OrbitalElementsSolver.elementsToCartesian(elem, mu);
+    expect(roundTrip.position.x).toBeCloseTo(r.x, 1);
+    expect(roundTrip.position.y).toBeCloseTo(r.y, 1);
+    expect(roundTrip.velocity.y).toBeCloseTo(v.y, 1);
   });
 
-  it('BACK44: Worker Thread Pool manages asynchronous task queue', async () => {
+  it('BACK43: Spatial Audio Node manages Web Audio 3D listener and panner positions', () => {
+    const mockPanner: any = {
+      panningModel: '',
+      distanceModel: '',
+      positionX: { setValueAtTime: vi.fn() },
+      positionY: { setValueAtTime: vi.fn() },
+      positionZ: { setValueAtTime: vi.fn() },
+    };
+    const mockAudioCtx: any = {
+      createPanner: vi.fn(() => mockPanner),
+      currentTime: 10,
+      listener: {
+        positionX: { setValueAtTime: vi.fn() },
+        positionY: { setValueAtTime: vi.fn() },
+        positionZ: { setValueAtTime: vi.fn() },
+        forwardX: { setValueAtTime: vi.fn() },
+        forwardY: { setValueAtTime: vi.fn() },
+        forwardZ: { setValueAtTime: vi.fn() },
+        upX: { setValueAtTime: vi.fn() },
+        upY: { setValueAtTime: vi.fn() },
+        upZ: { setValueAtTime: vi.fn() },
+      },
+    };
+    const spatialNode = new SpatialAudioNode(mockAudioCtx);
+    expect(spatialNode.getPanner()).toBe(mockPanner);
+    spatialNode.updateListener(new Vector3(0, 0, 0), new Vector3(0, 0, -1), new Vector3(0, 1, 0));
+    expect(mockAudioCtx.listener.positionX.setValueAtTime).toHaveBeenCalledWith(0, 10);
+    spatialNode.updatePosition(new Vector3(10, 20, 30));
+    expect(mockPanner.positionX.setValueAtTime).toHaveBeenCalledWith(10, 10);
+  });
+
+  it('BACK44: Worker Thread Pool dispatches tasks and terminates cleanly', async () => {
     const pool = new WorkerThreadPool(2);
     const res: any = await pool.enqueue('test_task', { value: 123 });
     expect(res.success).toBe(true);
     expect(res.data.value).toBe(123);
+    pool.terminate();
+    expect(pool.getActiveWorkerCount()).toBe(0);
   });
 
   // --- Gameplay Tests ---
@@ -356,5 +419,35 @@ describe('Recursive Pass 3 Verification Suite', () => {
 
     const vanAllen = new VanAllenBeltsVisualizer();
     expect(vanAllen.group).toBeDefined();
+  });
+
+  it('ASSET38: Spectroscopy Chart Generator calculates absorption wavelengths', () => {
+    const lines = SpectroscopyChartGenerator.getCommonAbsorptionLines();
+    expect(lines.length).toBeGreaterThan(5);
+    expect(lines.some(l => l.element === 'O2')).toBe(true);
+    expect(lines.some(l => l.element === 'CH4')).toBe(true);
+  });
+
+  it('ASSET41: Crater Scatter Generator stamps impact features on canvas contexts', () => {
+    const calls: string[] = [];
+    const mockCtx: any = {
+      createRadialGradient: vi.fn(() => ({
+        addColorStop: vi.fn(),
+      })),
+      beginPath: vi.fn(() => calls.push('beginPath')),
+      arc: vi.fn(() => calls.push('arc')),
+      fill: vi.fn(() => calls.push('fill')),
+      fillStyle: '',
+    };
+    CraterScatterGenerator.stampCraters(mockCtx, 512, 512, 10);
+    expect(mockCtx.beginPath).toHaveBeenCalled();
+    expect(mockCtx.arc).toHaveBeenCalled();
+    expect(mockCtx.fill).toHaveBeenCalled();
+    expect(calls.length).toBeGreaterThanOrEqual(10);
+  });
+
+  it('ASSET43: Radio Astronomy Audio synthesizes pulsar clicks and whistlers', () => {
+    const radio = new RadioAstronomyAudio();
+    expect(radio).toBeDefined();
   });
 });

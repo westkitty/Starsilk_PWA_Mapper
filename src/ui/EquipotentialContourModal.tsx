@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { CelestialBody } from '../simulation/types';
 import { RocheLobeOverflowSolver } from '../simulation/roche-lobe-overflow';
+import { EventBus } from '../core/event-bus';
 
 interface Props {
   isOpen: boolean;
@@ -69,8 +70,22 @@ export const EquipotentialContourModal: React.FC<Props> = ({ isOpen, onClose, bo
           <div className="text-center py-6 text-slate-400">Requires at least two celestial bodies</div>
         )}
 
-        <div className="mt-6 flex justify-end">
-          <button onClick={onClose} className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 rounded">
+        <div className="mt-6 flex justify-between items-center">
+          {star1 && star2 && (
+            <button
+              onClick={() => {
+                EventBus.emit('scene:toggle_roche_lobes', { visible: true });
+                EventBus.emit('ui:toast', {
+                  type: 'info',
+                  message: `Roche Lobe equipotentials wireframe rendered in 3D scene`,
+                });
+              }}
+              className="px-3 py-1.5 bg-amber-800/60 hover:bg-amber-700/80 text-amber-200 border border-amber-600/40 rounded transition"
+            >
+              Visualize 3D Roche Lobes
+            </button>
+          )}
+          <button onClick={onClose} className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 rounded ml-auto">
             Close
           </button>
         </div>

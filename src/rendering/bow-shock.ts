@@ -1,6 +1,6 @@
 /**
  * Planetary Magnetopause Bow Shock Mesh.
- * Renders an oriented paraboloid mesh facing the incoming stellar wind.
+ * Renders a semi-transparent parabolic/conical shell mesh facing upstream toward the host star.
  */
 
 import { Mesh, MeshBasicMaterial, DoubleSide, Vector3, Group, CylinderGeometry } from 'three';

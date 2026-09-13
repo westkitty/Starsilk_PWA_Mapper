@@ -5,6 +5,7 @@
 
 import * as THREE from "three";
 import { PlanetClassification } from "../simulation/types";
+import { CraterScatterGenerator } from "./crater-scatter";
 
 export function generatePlanetCanvasTexture(
   classification: PlanetClassification = "rocky",
@@ -77,7 +78,7 @@ export function generatePlanetCanvasTexture(
     ctx.fillStyle = `hsl(${baseHue}, ${baseSat}%, 40%)`;
     ctx.fillRect(0, 0, size, size);
 
-    for (let c = 0; c < 35; c++) {
+    for (let c = 0; c < 20; c++) {
       const x = (seed * 47 * (c + 1)) % size;
       const y = (seed * 91 * (c + 1)) % size;
       const rad = 4 + (c % 12);
@@ -86,6 +87,8 @@ export function generatePlanetCanvasTexture(
       ctx.arc(x, y, rad, 0, Math.PI * 2);
       ctx.fill();
     }
+    // Procedural impact craters with rims and central peaks (ASSET41)
+    CraterScatterGenerator.stampCraters(ctx, size, size, 14);
   }
 
   const texture = new THREE.CanvasTexture(canvas);

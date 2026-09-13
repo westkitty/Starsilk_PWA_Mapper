@@ -99,4 +99,64 @@ export class OrbitalElementsSolver {
       period,
     };
   }
+
+  /**
+   * Convert classical Keplerian orbital elements to Cartesian (position, velocity) vectors in the inertial frame.
+   */
+  public static elementsToCartesian(
+    elem: OrbitalElements,
+    mu: number
+  ): { position: Vector3; velocity: Vector3 } {
+    const a = elem.semiMajorAxis;
+    const e = elem.eccentricity;
+    const inc = elem.inclination;
+    const Omega = elem.longitudeOfAscendingNode;
+    const omega = elem.argumentOfPeriapsis;
+    const nu = elem.trueAnomaly;
+
+    if (a <= 0 || mu <= 0) {
+      return { position: new Vector3(), velocity: new Vector3() };
+    }
+
+    // Semi-latus rectum p = a * (1 - e^2)
+    const p = a * Math.max(1e-9, 1 - e * e);
+    // Radius r = p / (1 + e * cos(nu))
+    const r = p / (1 + e * Math.cos(nu));
+
+    // Perifocal coordinates (P, Q, W)
+    const rP = r * Math.cos(nu);
+    const rQ = r * Math.sin(nu);
+
+    const sqrtMuOverP = Math.sqrt(mu / p);
+    const vP = -sqrtMuOverP * Math.sin(nu);
+    const vQ = sqrtMuOverP * (e + Math.cos(nu));
+
+    // Rotation from perifocal frame to inertial frame:
+    // P-unit vector:
+    const cosO = Math.cos(Omega), sinO = Math.sin(Omega);
+    const cosi = Math.cos(inc), sini = Math.sin(inc);
+    const cosw = Math.cos(omega), sinw = Math.sin(omega);
+
+    const Px = cosO * cosw - sinO * sinw * cosi;
+    const Py = sinO * cosw + cosO * sinw * cosi;
+    const Pz = sinw * sini;
+
+    const Qx = -cosO * sinw - sinO * cosw * cosi;
+    const Qy = -sinO * sinw + cosO * cosw * cosi;
+    const Qz = cosw * sini;
+
+    const posX = rP * Px + rQ * Qx;
+    const posY = rP * Py + rQ * Qy;
+    const posZ = rP * Pz + rQ * Qz;
+
+    const velX = vP * Px + vQ * Qx;
+    const velY = vP * Py + vQ * Qy;
+    const velZ = vP * Pz + vQ * Qz;
+
+    return {
+      position: new Vector3(posX, posY, posZ),
+      velocity: new Vector3(velX, velY, velZ),
+    };
+  }
 }
+

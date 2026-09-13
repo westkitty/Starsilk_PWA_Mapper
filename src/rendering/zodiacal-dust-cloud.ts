@@ -1,6 +1,6 @@
 /**
- * Zodiacal Dust Cloud & Ecliptic Scattered Light Disc.
- * Renders the faint interplanetary dust cloud in the ecliptic plane.
+ * Zodiacal Dust Cloud Mesh.
+ * Renders a stylized faint interplanetary dust disc in the ecliptic plane.
  */
 
 import { Mesh, RingGeometry, MeshBasicMaterial, DoubleSide } from 'three';

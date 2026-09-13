@@ -1,6 +1,6 @@
 /**
  * Celestial Horizon Contact Occlusion Shading Helper.
- * Computes soft horizon darkening and contact occlusion factors for close celestial surfaces.
+ * Computes analytical horizon darkening and line-of-sight occlusion between neighboring celestial bodies.
  */
 
 import { Vector3 } from 'three';

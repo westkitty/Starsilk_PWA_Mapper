@@ -1,6 +1,6 @@
 /**
- * Gravitational Spherical Harmonics (Zonal J2, J3, J4 Multipole Expansion).
- * Models non-spherical oblate mass distribution effects (nodal regression and apsidal precession).
+ * Gravitational Zonal J2 Harmonic Oblateness Acceleration.
+ * Models non-spherical oblate mass distribution effects (J2 quadrupole acceleration and nodal regression).
  */
 
 import { Vector3 } from 'three';

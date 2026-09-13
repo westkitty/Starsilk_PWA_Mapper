@@ -7,6 +7,7 @@ export const RelativisticAberrationToggle: React.FC = () => {
   const toggle = () => {
     const next = !enabled;
     setEnabled(next);
+    EventBus.emit('fx:aberration_toggle', { enabled: next });
     EventBus.emit('ui:toast', {
       type: 'info',
       message: `Relativistic Lorentz/Aberration FX: ${next ? 'ENABLED (1/c²)' : 'DISABLED'}`,

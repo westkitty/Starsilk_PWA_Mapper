@@ -1,6 +1,6 @@
 /**
- * NASA SPK / Chebyshev Polynomial Ephemeris Evaluator.
- * Evaluates position and velocity state vectors from Chebyshev segment coefficients.
+ * Chebyshev Polynomial Ephemeris State Evaluator.
+ * Evaluates position coordinates from Chebyshev polynomial segments via Clenshaw recurrence.
  */
 
 import { Vector3 } from 'three';

@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { CelestialBody } from '../simulation/types';
 import { MagnetosphereSolver } from '../simulation/magnetosphere';
+import { EventBus } from '../core/event-bus';
 
 interface Props {
   isOpen: boolean;
@@ -63,8 +64,22 @@ export const MagnetosphereModal: React.FC<Props> = ({ isOpen, onClose, bodies, s
           <div className="text-center py-6 text-slate-400">Select a planet to inspect magnetic shield</div>
         )}
 
-        <div className="mt-6 flex justify-end">
-          <button onClick={onClose} className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 rounded">
+        <div className="mt-6 flex justify-between items-center">
+          {planet && (
+            <button
+              onClick={() => {
+                EventBus.emit('scene:toggle_magnetosphere', { visible: true, targetBodyId: planet.id });
+                EventBus.emit('ui:toast', {
+                  type: 'info',
+                  message: `Magnetosphere Bow Shock & Radiation Belts visualizer enabled for ${planet.name}`,
+                });
+              }}
+              className="px-3 py-1.5 bg-sky-800/60 hover:bg-sky-700/80 text-sky-200 border border-sky-600/40 rounded transition"
+            >
+              Visualize Field Lines in 3D
+            </button>
+          )}
+          <button onClick={onClose} className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 rounded ml-auto">
             Close
           </button>
         </div>

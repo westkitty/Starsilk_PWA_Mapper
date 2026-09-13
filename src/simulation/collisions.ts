@@ -3,6 +3,8 @@
  */
 
 import { CelestialBody, ConsequenceEvent, Vector3D } from './types';
+import { Box3, Vector3 } from 'three';
+import { BVHNode, BVHEntity } from './collision-mesh-broadphase';
 
 export interface CollisionEventDetail {
   timestampSec: number;
@@ -36,18 +38,49 @@ export function resolveCollisions(
   const collisions: CollisionEventDetail[] = [];
   const deadIds = new Set<string>();
 
-  for (let i = 0; i < bodies.length; i++) {
+  // Broadphase collision acceleration via BVH for larger systems
+  const candidatePairs: [number, number][] = [];
+  if (bodies.length > 8) {
+    const idToIndex = new Map<string, number>();
+    const entities: BVHEntity[] = bodies.map((b, idx) => {
+      idToIndex.set(b.id, idx);
+      const min = new Vector3(b.position.x - b.radiusKm, b.position.y - b.radiusKm, b.position.z - b.radiusKm);
+      const max = new Vector3(b.position.x + b.radiusKm, b.position.y + b.radiusKm, b.position.z + b.radiusKm);
+      return { id: b.id, box: new Box3(min, max) };
+    });
+    const bvh = new BVHNode(entities);
+    const checkedPairs = new Set<string>();
+
+    for (let i = 0; i < entities.length; i++) {
+      const hits = bvh.queryIntersections(entities[i].box);
+      for (const hitId of hits) {
+        const j = idToIndex.get(hitId);
+        if (j !== undefined && i < j) {
+          const pairKey = `${i}:${j}`;
+          if (!checkedPairs.has(pairKey)) {
+            checkedPairs.add(pairKey);
+            candidatePairs.push([i, j]);
+          }
+        }
+      }
+    }
+  } else {
+    for (let i = 0; i < bodies.length; i++) {
+      for (let j = i + 1; j < bodies.length; j++) {
+        candidatePairs.push([i, j]);
+      }
+    }
+  }
+
+  for (const [i, j] of candidatePairs) {
     const bi = bodies[i];
-    if (deadIds.has(bi.id)) continue;
+    const bj = bodies[j];
+    if (deadIds.has(bi.id) || deadIds.has(bj.id)) continue;
 
-    for (let j = i + 1; j < bodies.length; j++) {
-      const bj = bodies[j];
-      if (deadIds.has(bj.id)) continue;
-
-      const dx = bj.position.x - bi.position.x;
-      const dy = bj.position.y - bi.position.y;
-      const dz = bj.position.z - bi.position.z;
-      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const dx = bj.position.x - bi.position.x;
+    const dy = bj.position.y - bi.position.y;
+    const dz = bj.position.z - bi.position.z;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
       // Collision threshold is sum of physical radii
       const threshold = bi.radiusKm + bj.radiusKm;
@@ -141,7 +174,6 @@ export function resolveCollisions(
         });
       }
     }
-  }
 
   // Remove dead bodies
   if (deadIds.size > 0) {

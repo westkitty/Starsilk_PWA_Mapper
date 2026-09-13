@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { CelestialBody } from '../simulation/types';
 import { SpaceElevatorCalculator } from '../simulation/space-elevator';
+import { EventBus } from '../core/event-bus';
 
 interface Props {
   isOpen: boolean;
@@ -68,8 +69,22 @@ export const SpaceElevatorModal: React.FC<Props> = ({ isOpen, onClose, bodies, s
           <div className="text-center py-6 text-slate-400">Select a terrestrial planet</div>
         )}
 
-        <div className="mt-6 flex justify-end">
-          <button onClick={onClose} className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 rounded">
+        <div className="mt-6 flex justify-between items-center">
+          {planet && (
+            <button
+              onClick={() => {
+                EventBus.emit('scene:toggle_space_elevator', { visible: true, targetBodyId: planet.id });
+                EventBus.emit('ui:toast', {
+                  type: 'success',
+                  message: `Space Elevator Tether deployed at ${planet.name}`,
+                });
+              }}
+              className="px-3 py-1.5 bg-teal-800/60 hover:bg-teal-700/80 text-teal-200 border border-teal-600/40 rounded transition"
+            >
+              Deploy 3D Tether
+            </button>
+          )}
+          <button onClick={onClose} className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 rounded ml-auto">
             Close
           </button>
         </div>

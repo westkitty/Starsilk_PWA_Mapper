@@ -22,7 +22,13 @@ export type SimulationEventType =
   | "system:toast"
   | "ui:toast"
   | "challenge:progress"
-  | "perf:report";
+  | "perf:report"
+  | "fx:aberration_toggle"
+  | "scene:trigger_cme"
+  | "scene:toggle_dyson"
+  | "scene:toggle_magnetosphere"
+  | "scene:toggle_roche_lobes"
+  | "scene:toggle_space_elevator";
 
 export interface EventPayloads {
   "system:reset": { timestamp: number };
@@ -44,6 +50,12 @@ export interface EventPayloads {
   "ui:toast": { message: string; type?: "info" | "success" | "warn" | "warning" | "error"; durationMs?: number };
   "challenge:progress": { challengeId: string; isComplete: boolean; progressPct: number };
   "perf:report": { fps: number; frameDeltaMs: number; physicsStepMs: number; drawCalls: number };
+  "fx:aberration_toggle": { enabled: boolean };
+  "scene:trigger_cme": { origin?: any };
+  "scene:toggle_dyson": { visible: boolean; radiusAu?: number };
+  "scene:toggle_magnetosphere": { visible: boolean; targetBodyId?: string };
+  "scene:toggle_roche_lobes": { visible: boolean };
+  "scene:toggle_space_elevator": { visible: boolean; targetBodyId?: string };
 }
 
 type EventListener<K extends SimulationEventType> = (payload: EventPayloads[K]) => void;

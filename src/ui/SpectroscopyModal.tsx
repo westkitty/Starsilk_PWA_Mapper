@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
 import { CelestialBody } from '../simulation/types';
 import { SpectroscopySolver } from '../simulation/spectroscopy';
+import { SpectroscopyChartGenerator } from '../rendering/spectroscopy-chart';
 
 interface Props {
   isOpen: boolean;
@@ -10,6 +11,8 @@ interface Props {
 }
 
 export const SpectroscopyModal: React.FC<Props> = ({ isOpen, onClose, bodies, selectedBodyId }) => {
+  const spectrumCanvasRef = useRef<HTMLDivElement | null>(null);
+
   if (!isOpen) return null;
 
   const body = useMemo(() => {
@@ -24,6 +27,21 @@ export const SpectroscopyModal: React.FC<Props> = ({ isOpen, onClose, bodies, se
     const volcanism = (body as any).volcanicActivity || 0.1;
     return SpectroscopySolver.analyzeAtmosphere(tempK, pressure, water, volcanism);
   }, [body]);
+
+  useEffect(() => {
+    if (!spectrumCanvasRef.current || !spectrum) return;
+    spectrumCanvasRef.current.innerHTML = '';
+    const notches: number[] = [430, 486, 527, 589, 656, 687];
+    if (spectrum.o2 > 0.1) notches.push(760);
+    if (spectrum.h2o > 0.05) notches.push(720);
+    const canvas = SpectroscopyChartGenerator.generateSpectrumCanvas(360, 48, notches);
+    if (canvas) {
+      canvas.style.width = '100%';
+      canvas.style.height = '48px';
+      canvas.style.borderRadius = '4px';
+      spectrumCanvasRef.current.appendChild(canvas);
+    }
+  }, [spectrum]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
@@ -64,6 +82,11 @@ export const SpectroscopyModal: React.FC<Props> = ({ isOpen, onClose, bodies, se
                 <span>N₂ (Nitrogen):</span>
                 <span className="text-blue-300">{(spectrum.n2 * 100).toFixed(2)}%</span>
               </div>
+            </div>
+
+            <div className="space-y-1 bg-slate-800/40 p-2.5 rounded border border-slate-700/50">
+              <div className="text-slate-400 text-[10px]">Fraunhofer Absorption Spectrum:</div>
+              <div ref={spectrumCanvasRef} className="rounded overflow-hidden" />
             </div>
 
             <div className="bg-slate-800/80 p-3 rounded border border-emerald-500/30 flex justify-between items-center">

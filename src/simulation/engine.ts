@@ -14,6 +14,8 @@ import { CelestialBody, ConsequenceEvent, SimulationSnapshot, AsteroidBelt, Hook
 import { stepVelocityVerlet } from './integrator';
 import { resolveCollisions, CollisionDebrisParticle } from './collisions';
 import { updateBodyTemperatures } from './thermal';
+import { AdaptiveTimestepController } from './adaptive-timestep';
+import { BinaryStateSerializer } from '../persistence/binary-serializer';
 
 export interface SimulationEngineConfig {
   enableCollisions: boolean;
@@ -32,6 +34,8 @@ export class SimulationEngine {
   public isPaused: boolean = false;
   public enableCollisions: boolean = true;
   public systemStatus: SystemStatus = 'active';
+  public adaptiveTimestepEnabled: boolean = false;
+  public adaptiveController: AdaptiveTimestepController = new AdaptiveTimestepController(1.0, 3600.0, 1e-4);
 
   private accumulatorSec: number = 0;
   private readonly fixedStepSec: number = 60.0; // 1 minute fixed physics step
@@ -169,6 +173,27 @@ export class SimulationEngine {
     this.bodies = JSON.parse(JSON.stringify(snapshot.bodies));
     this.belts = JSON.parse(JSON.stringify(snapshot.belts ?? []));
     this.hookshotRoutes = JSON.parse(JSON.stringify(snapshot.hookshotRoutes ?? []));
+    updateBodyTemperatures(this.bodies);
+  }
+
+  /**
+   * Export high-performance binary state packed ArrayBuffer (BACK35).
+   */
+  public exportBinaryState(): ArrayBuffer {
+    return BinaryStateSerializer.serialize(this.bodies);
+  }
+
+  /**
+   * Import high-performance binary state packed ArrayBuffer (BACK35).
+   */
+  public importBinaryState(buffer: ArrayBuffer): void {
+    const records = BinaryStateSerializer.deserialize(buffer);
+    for (let i = 0; i < Math.min(records.length, this.bodies.length); i++) {
+      this.bodies[i].massKg = records[i].mass;
+      this.bodies[i].radiusKm = records[i].radius;
+      this.bodies[i].position = { x: records[i].position.x, y: records[i].position.y, z: records[i].position.z };
+      this.bodies[i].velocity = { x: records[i].velocity.x, y: records[i].velocity.y, z: records[i].velocity.z };
+    }
     updateBodyTemperatures(this.bodies);
   }
 }

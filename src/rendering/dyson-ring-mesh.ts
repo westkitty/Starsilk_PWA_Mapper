@@ -1,6 +1,6 @@
 /**
  * Dyson Ring Megastructure Mesh.
- * Renders a segmented solar collector band surrounding the central star.
+ * Renders a high-specular metallic torus collector ring surrounding the central star.
  */
 
 import { Mesh, TorusGeometry, MeshStandardMaterial, DoubleSide } from 'three';

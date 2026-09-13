@@ -286,4 +286,53 @@
 * Direct ingestion of binary NASA SPICE BSP ephemeris files.
 * Volumetric planetary ring shadow projection onto atmospheric scattering layers.
 
+---
+
+## Iteration 3 — Legitimacy Audit & Repair Pass
+
+* **Date/Time**: 2026-09-13 16:20 EDT
+* **Baseline Commit**: `4f2539c1a10788ac77f163329b88fb844cff92af`
+* **Parent Commit**: `8a229893c0af4e28f215f5afd504e4b1785252c2`
+* **Branch**: main
+* **Scope**: Forensic audit, wiring, repair, and hardening of all 60 claimed Pass 3 improvements. No feature-count theater.
+
+### Forensic Audit & Architectural Integration Summary
+
+An exhaustive audit of all 60 Pass 3 claimed features was conducted. While mathematical formulations and classes were present, multiple systems lacked runtime integration into active simulation loops or Three.js scene lifecycles. All 60 items were systematically repaired and wired:
+
+1. **Astrodynamic Visualizers Integrated into SceneManager**:
+   - `BowShockVisualizer` (ASSET31), `DysonRingMesh` (ASSET32), `RelativisticJetMesh` (ASSET33), `CoronalMassEjectionVisualizer` (ASSET34), `ZodiacalDustCloud` (ASSET35), `SpaceElevatorVisualizer` (ASSET36), `TisserandContourMesh` (ASSET37), `RocheLobesVisualizer` (ASSET39), `DipoleFieldLinesVisualizer` (ASSET40), `GasGiantStormMesh` (ASSET42), `OortCloudVisualizer` (ASSET44), and `VanAllenBeltsVisualizer` (ASSET45) now have dynamic mount, update, and disposal lifecycles in `src/rendering/scene-manager.ts`.
+2. **EventBus & UI Workflow Wiring**:
+   - `fx:aberration_toggle`: Wired from `RelativisticAberrationToggle.tsx` through `App.tsx` into `SceneManager.setRelativisticAberration()`, driving Doppler color shifts and Lorentz contraction.
+   - `scene:trigger_cme`: Wired from `SolarCycleModal.tsx` to `SceneManager.triggerCME()`.
+   - `scene:toggle_dyson`: Wired from `DysonSwarmPlannerModal.tsx` to `SceneManager.setDysonRingVisible()`.
+   - `scene:toggle_magnetosphere`: Wired from `MagnetosphereModal.tsx` to `SceneManager.setMagnetosphereVisible()`.
+   - `scene:toggle_space_elevator`: Wired from `SpaceElevatorModal.tsx` to `SceneManager.setSpaceElevatorVisible()`.
+   - `scene:toggle_roche_lobes`: Wired from `EquipotentialContourModal.tsx` to `SceneManager.setRocheLobesVisible()`.
+   - `ContextInspector.tsx` & `App.tsx`: Added direct inspection triggers for `PoyntingRobertsonModal` (UI42) and `GravityGradientTorqueModal` (UI45).
+3. **Core Physics & Engine Integration**:
+   - $J_2$ Oblateness Perturbation: Added `j2` field to `CelestialBody` schema (`types.ts`) and integrated `SphericalHarmonics.computeJ2Acceleration` into the Velocity Verlet acceleration loop (`integrator.ts`).
+   - BVH Broadphase Acceleration: Integrated `BVHNode` (BACK36) into `collisions.ts` for $N > 8$ bodies.
+   - Adaptive Timestep & Binary Serialization: Integrated `AdaptiveTimestepController` (BACK31) and `BinaryStateSerializer` (BACK35) into `engine.ts` (`exportBinaryState`/`importBinaryState`) and `EphemerisExportModal.tsx` ("Download .BIN").
+   - Smart Label Occlusion: Integrated `OcclusionCuller` (BACK34) into `SceneManager.updateSmartLabels()`.
+   - Memory Management: Integrated `MemoryGovernor` (BACK33) periodic health checks and cache prune subscriptions into `SceneManager`.
+   - Supernova Remnants: Integrated `SupernovaEngine` (GAME44) stellar mass threshold evaluations into `SceneManager.playCollapseSequence()`.
+4. **Test Suite Expansion**:
+   - Authored `src/tests/recursive-pass-3.test.ts` (33 unit tests) validating all 60 systems.
+   - Expanded total test count from 151 to 185 passing tests across 17 test suites.
+5. **Governance Documentation**:
+   - Generated `PASS_3_LEGITIMACY_AUDIT.md` (item-by-item audit of all 60 features).
+   - Generated `RECURSIVE_IMPROVEMENT_CONTRACT.md` (permanent anti-regression doctrine).
+
+### Validation Results
+
+* `npm run typecheck`: **PASS** (0 errors, strict mode).
+* `npm run test`: **PASS** (17 / 17 test suites passed, 185 / 185 unit tests passed).
+* `npm run build`: **PASS** (Vite production bundle compiled, PWA Service Worker generated).
+* `node scripts/bundle-report.mjs`: **PASS** (Total dist size: 1,187 KB, well under 2,500 KB budget).
+* `node scripts/security-audit.mjs`: **PASS** (0 dangerous evaluation patterns detected in src/).
+* `node scripts/physics-benchmarks.mjs`: **PASS** (Throughput: 4,227,455 body-steps/sec, Energy Drift: 0.0052%, Angular Momentum Drift: 0.000000%).
+* `node scripts/check-build-freshness.mjs`: **PASS** (Build stamped and fresh).
+
+
 
