@@ -161,6 +161,108 @@ export class AudioSynthesizer {
     osc.start();
     osc.stop(ctx.currentTime + 1.25);
   }
+
+  /**
+   * ASSET12: Slingshot whoosh sound (frequency sweep + stereo filter).
+   */
+  public playSlingshotWhoosh(): void {
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(220, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.25);
+    osc.frequency.exponentialRampToValueAtTime(330, ctx.currentTime + 0.6);
+
+    gain.gain.setValueAtTime(0.01, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.25);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain || ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime + 0.6);
+  }
+
+  /**
+   * ASSET12: Heavy collision impact thud.
+   */
+  public playImpactThud(): void {
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(120, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(30, ctx.currentTime + 0.4);
+
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain || ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime + 0.45);
+  }
+
+  /**
+   * ASSET12: Syzygy alignment celestial chime.
+   */
+  public playSyzygyChime(): void {
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const freqs = [880, 1108.73, 1318.51, 1760]; // High sparkling A-major chime
+    const now = ctx.currentTime;
+
+    for (let i = 0; i < freqs.length; i++) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freqs[i], now + i * 0.05);
+
+      gain.gain.setValueAtTime(0.04, now + i * 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8 + i * 0.05);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain || ctx.destination);
+
+      osc.start(now + i * 0.05);
+      osc.stop(now + 0.85 + i * 0.05);
+    }
+  }
+
+  /**
+   * ASSET12: Warp transition audio sweep.
+   */
+  public playWarpJump(): void {
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(300, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(2400, ctx.currentTime + 0.35);
+
+    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain || ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime + 0.42);
+  }
 }
 
 export const audioSynth = new AudioSynthesizer();

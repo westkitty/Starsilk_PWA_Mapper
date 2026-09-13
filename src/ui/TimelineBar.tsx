@@ -5,6 +5,7 @@ import { TimelineBranch } from '../branching/branch-types';
 import { ConsequenceEvent } from '../simulation/types';
 import { TimelineEventPips } from './TimelineEventPips';
 import { AudioOscilloscope } from './AudioOscilloscope';
+import { TimeScrubControls } from './TimeScrubControls';
 
 interface TimelineBarProps {
   timeSec: number;
@@ -12,6 +13,7 @@ interface TimelineBarProps {
   isPaused: boolean;
   onTogglePause: () => void;
   onSetTimeScale: (scale: number) => void;
+  onStepTime?: (deltaSeconds: number) => void;
   branches: TimelineBranch[];
   activeBranchId: string;
   onSwitchBranch: (id: string) => void;
@@ -30,6 +32,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
   isPaused,
   onTogglePause,
   onSetTimeScale,
+  onStepTime,
   branches,
   activeBranchId,
   onSwitchBranch,
@@ -92,6 +95,8 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
             </button>
           ))}
         </div>
+
+        {onStepTime && <TimeScrubControls onStepTime={onStepTime} />}
 
         {/* Elapsed Sim Time */}
         <div style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>

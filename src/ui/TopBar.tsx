@@ -1,7 +1,11 @@
 import React from 'react';
 import { Eye, Volume2, VolumeX, Grid, Download, Upload, Sparkles } from 'lucide-react';
 import { ScaleMode } from '../rendering/scale-transform';
-import { SystemStatus } from '../simulation/types';
+import { SystemStatus, CelestialBody } from '../simulation/types';
+import { BodySearchBar } from './BodySearchBar';
+import { ThemeSelector, AstrometricTheme } from './ThemeSelector';
+import { AccessibilityControls } from './AccessibilityControls';
+import { BarChart2, Compass, HelpCircle } from 'lucide-react';
 
 export type AppMode = 'BUILD' | 'SIMULATE' | 'FORECAST' | 'CANON LAB' | 'PRESENT';
 
@@ -22,6 +26,16 @@ interface TopBarProps {
   onExport: () => void;
   onImport: () => void;
   onLoadPreset: (name: 'demo' | 'meridian' | 'blank') => void;
+  bodies?: CelestialBody[];
+  onSelectBody?: (id: string) => void;
+  onOpenNavigator?: () => void;
+  onOpenStats?: () => void;
+  onOpenShortcuts?: () => void;
+  onOpenAudioSettings?: () => void;
+  currentTheme?: AstrometricTheme;
+  onSelectTheme?: (theme: AstrometricTheme) => void;
+  isHighContrast?: boolean;
+  onToggleHighContrast?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -41,6 +55,16 @@ export const TopBar: React.FC<TopBarProps> = ({
   onExport,
   onImport,
   onLoadPreset,
+  bodies = [],
+  onSelectBody,
+  onOpenNavigator,
+  onOpenStats,
+  onOpenShortcuts,
+  onOpenAudioSettings,
+  currentTheme = 'obsidian',
+  onSelectTheme,
+  isHighContrast = false,
+  onToggleHighContrast,
 }) => {
   return (
     <header className="top-hud-bar hud-interactive">
@@ -195,9 +219,70 @@ export const TopBar: React.FC<TopBarProps> = ({
           <Grid size={14} />
         </button>
 
-        {/* Audio Toggle */}
+        {/* Search */}
+        {onSelectBody && <BodySearchBar bodies={bodies} onSelectBody={onSelectBody} />}
+
+        {/* Navigator */}
+        {onOpenNavigator && (
+          <button
+            onClick={onOpenNavigator}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="Open System Navigator (N)"
+          >
+            <Compass size={14} />
+          </button>
+        )}
+
+        {/* System Stats */}
+        {onOpenStats && (
+          <button
+            onClick={onOpenStats}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="System Astrometric Overview"
+          >
+            <BarChart2 size={14} />
+          </button>
+        )}
+
+        {/* Shortcuts / Help */}
+        {onOpenShortcuts && (
+          <button
+            onClick={onOpenShortcuts}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="Keyboard Shortcuts & Controls (?)"
+          >
+            <HelpCircle size={14} />
+          </button>
+        )}
+
+        {/* Audio Toggle & Settings */}
         <button
           onClick={onToggleAudio}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            if (onOpenAudioSettings) onOpenAudioSettings();
+          }}
           style={{
             background: audioEnabled ? 'rgba(12, 198, 255, 0.15)' : 'rgba(7, 19, 30, 0.8)',
             color: audioEnabled ? 'var(--accent-azure)' : 'var(--text-muted)',
@@ -206,10 +291,16 @@ export const TopBar: React.FC<TopBarProps> = ({
             padding: '6px 8px',
             cursor: 'pointer',
           }}
-          title={audioEnabled ? 'Sound ON' : 'Sound OFF (Web Audio)'}
+          title={audioEnabled ? 'Sound ON (Right-click for settings)' : 'Sound OFF (Right-click for settings)'}
         >
           {audioEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
         </button>
+
+        {/* Theme & Accessibility */}
+        {onSelectTheme && <ThemeSelector currentTheme={currentTheme} onSelectTheme={onSelectTheme} />}
+        {onToggleHighContrast && (
+          <AccessibilityControls isHighContrast={isHighContrast} onToggleHighContrast={onToggleHighContrast} />
+        )}
 
         {/* Export / Import */}
         <button

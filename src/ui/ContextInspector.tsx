@@ -4,6 +4,7 @@ import { formatDistance, formatMass, formatRadius, formatVelocity, formatSimTime
 import { calculateOsculatingElements, detectResonance } from '../simulation/orbital-mechanics';
 import { Trash2, Focus, Move, Sparkles, Eye } from 'lucide-react';
 import { ResonanceBadge } from './ResonanceBadge';
+import { HabitabilityBadge } from './HabitabilityBadge';
 
 interface ContextInspectorProps {
   selectedBody: CelestialBody | null;
@@ -76,6 +77,7 @@ export const ContextInspector: React.FC<ContextInspectorProps> = ({
               UNAUTHORED COORDINATES — DEMO ORBIT
             </div>
           )}
+          <HabitabilityBadge temperatureK={selectedBody.temperatureK} />
         </div>
 
         <div style={{ display: 'flex', gap: '4px' }}>

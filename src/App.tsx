@@ -39,6 +39,21 @@ import { ManipulationTelemetry, LiveManipulationStats } from './ui/ManipulationT
 import { OffscreenPointers } from './ui/OffscreenPointers';
 import { GestureCoach } from './ui/GestureCoach';
 import { ControlsHelpModal } from './ui/ControlsHelpModal';
+import { ErrorBoundary } from './ui/ErrorBoundary';
+import { ToastContainer } from './ui/Toast';
+import { SystemNavigatorModal } from './ui/SystemNavigatorModal';
+import { ShortcutsModal } from './ui/ShortcutsModal';
+import { SystemStatsModal } from './ui/SystemStatsModal';
+import { AudioSettingsModal } from './ui/AudioSettingsModal';
+import { OnboardingOverlay } from './ui/OnboardingOverlay';
+import { RadarMinimap } from './ui/RadarMinimap';
+import { CollisionWarningBanner } from './ui/CollisionWarningBanner';
+import { AstrometricTheme } from './ui/ThemeSelector';
+import { generateProceduralSystem } from './simulation/presets/procedural-system';
+import { eventBus } from './core/event-bus';
+import { undoStack } from './simulation/undo-stack';
+import { autosaveManager } from './persistence/autosave';
+import { perfMonitor } from './core/perf-monitor';
 import { TemporalHistoryBuffer } from './rendering/temporal-history';
 import { stepVelocityVerlet } from './simulation/integrator';
 import { TimelineBranch } from './branching/branch-types';
@@ -122,6 +137,14 @@ export const App: React.FC = () => {
   const [isCompareOpen, setIsCompareOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isMeasurementOpen, setIsMeasurementOpen] = useState(false);
+  const [isNavigatorOpen, setIsNavigatorOpen] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [isStatsOpen, setIsStatsOpen] = useState(false);
+  const [isAudioSettingsOpen, setIsAudioSettingsOpen] = useState(false);
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+  const [currentTheme, setCurrentTheme] = useState<AstrometricTheme>('obsidian');
+  const [isHighContrast, setIsHighContrast] = useState(false);
+  const [collisionWarning, setCollisionWarning] = useState<{ hasWarning: boolean; message: string }>({ hasWarning: false, message: '' });
 
   // Interaction & Instrumentation Expansion (#26–#50)
   const [isPrecisionMode, setIsPrecisionMode] = useState(false);
@@ -712,6 +735,33 @@ export const App: React.FC = () => {
         }
       }
 
+      perfMonitor.recordFrame();
+      if (engineRef.current && frameTicker % 60 === 0) {
+        const bodies = engineRef.current.bodies;
+        let warningFound = false;
+        for (let i = 0; i < bodies.length; i++) {
+          for (let j = i + 1; j < bodies.length; j++) {
+            const d = Math.hypot(
+              bodies[i].position.x - bodies[j].position.x,
+              bodies[i].position.y - bodies[j].position.y,
+              bodies[i].position.z - bodies[j].position.z
+            );
+            if (d < (bodies[i].radiusKm + bodies[j].radiusKm) * 2.5) {
+              setCollisionWarning({
+                hasWarning: true,
+                message: `Impending Encounter: ${bodies[i].name} & ${bodies[j].name} approaching mutual threshold!`,
+              });
+              warningFound = true;
+              break;
+            }
+          }
+          if (warningFound) break;
+        }
+        if (!warningFound) {
+          setCollisionWarning({ hasWarning: false, message: '' });
+        }
+      }
+
       animationFrameId = requestAnimationFrame(tick);
     };
 
@@ -837,10 +887,15 @@ export const App: React.FC = () => {
           e.preventDefault();
           setIsMeasurementOpen(prev => !prev);
           break;
+        case 'n':
+        case 'N':
+          e.preventDefault();
+          setIsNavigatorOpen(prev => !prev);
+          break;
         case '?':
         case '/':
           e.preventDefault();
-          setIsHelpOpen(prev => !prev);
+          setIsShortcutsOpen(prev => !prev);
           break;
         case '1':
           if (!e.ctrlKey && !e.metaKey && sceneMgr.cameraController.loadBookmark(1)) {
@@ -972,7 +1027,7 @@ export const App: React.FC = () => {
   };
 
   // Load Presets
-  const handleLoadPreset = (presetType: 'demo' | 'meridian' | 'blank') => {
+  const handleLoadPreset = (presetType: 'demo' | 'meridian' | 'blank' | 'procedural') => {
     if (!engineRef.current || !sceneRef.current) return;
 
     let preset: { bodies: CelestialBody[]; belts?: any[] };
@@ -984,6 +1039,10 @@ export const App: React.FC = () => {
     } else if (presetType === 'meridian') {
       preset = createMeridianPreset();
       pName = 'Virgil & Meridian Reference Study';
+    } else if (presetType === 'procedural') {
+      const generated = generateProceduralSystem(Date.now());
+      preset = { bodies: generated.bodies };
+      pName = generated.name;
     } else {
       preset = createBlankSystem();
       pName = 'Blank System';
@@ -1015,6 +1074,9 @@ export const App: React.FC = () => {
 
     setProjectName(pName);
     setSigilSvg(generateSystemSigilSvg(pName, engineRef.current.bodies));
+    undoStack.pushState(engineRef.current.bodies, null, `Loaded: ${pName}`);
+    autosaveManager.scheduleAutosave(pName, engineRef.current.bodies);
+    eventBus.emit('toast:notify', { message: `Loaded system: ${pName}`, type: 'success' });
     audioSynth.playTick();
   };
 
@@ -1142,9 +1204,10 @@ export const App: React.FC = () => {
   const selectedBody = engineRef.current?.bodies.find(b => b.id === selectedBodyId) || null;
 
   return (
-    <div className="planner-viewport">
-      {/* 3D WebGL Canvas */}
-      <canvas ref={canvasRef} className="universe-canvas" />
+    <ErrorBoundary>
+      <div className={`planner-viewport theme-${currentTheme} ${isHighContrast ? 'a11y-high-contrast' : ''}`}>
+        {/* 3D WebGL Canvas */}
+        <canvas ref={canvasRef} className="universe-canvas" />
 
       {/* Primary HUD Overlay */}
       <div className="hud-layer">
@@ -1168,6 +1231,20 @@ export const App: React.FC = () => {
           onExport={handleExport}
           onImport={handleImport}
           onLoadPreset={handleLoadPreset}
+          bodies={engineRef.current?.bodies || []}
+          onSelectBody={(id) => {
+            setSelectedBodyId(id);
+            selectedBodyIdRef.current = id;
+            sceneRef.current?.setSelectedBody(id);
+          }}
+          onOpenNavigator={() => setIsNavigatorOpen(true)}
+          onOpenStats={() => setIsStatsOpen(true)}
+          onOpenShortcuts={() => setIsShortcutsOpen(true)}
+          onOpenAudioSettings={() => setIsAudioSettingsOpen(true)}
+          currentTheme={currentTheme}
+          onSelectTheme={(t) => setCurrentTheme(t)}
+          isHighContrast={isHighContrast}
+          onToggleHighContrast={() => setIsHighContrast(!isHighContrast)}
         />
 
         {/* Center Canvas Area (Tap void handled by pointer-manager) */}
@@ -1237,6 +1314,13 @@ export const App: React.FC = () => {
           isPaused={isPaused}
           onTogglePause={handleTogglePause}
           onSetTimeScale={handleSetTimeScale}
+          onStepTime={(dt) => {
+            if (engineRef.current && sceneRef.current) {
+              engineRef.current.timeSec = Math.max(0, engineRef.current.timeSec + dt);
+              setSimTimeSec(engineRef.current.timeSec);
+              audioSynth.playTick();
+            }
+          }}
           branches={branches}
           activeBranchId={activeBranchId}
           onSwitchBranch={handleSwitchBranch}
@@ -1440,7 +1524,68 @@ export const App: React.FC = () => {
         isOpen={isHelpOpen}
         onClose={() => setIsHelpOpen(false)}
       />
+
+      {/* 2D Ecliptic Radar Minimap (UI07) */}
+      <RadarMinimap
+        bodies={engineRef.current?.bodies || []}
+        selectedBodyId={selectedBodyId}
+        onSelectBody={(id) => {
+          setSelectedBodyId(id);
+          selectedBodyIdRef.current = id;
+          sceneRef.current?.setSelectedBody(id);
+        }}
+      />
+
+      {/* Collision Warning Banner (UI14) */}
+      <CollisionWarningBanner
+        hasWarning={collisionWarning.hasWarning}
+        message={collisionWarning.message}
+        onPause={handleTogglePause}
+      />
+
+      {/* Ephemeral Toast Notifications (UI03) */}
+      <ToastContainer />
+
+      {/* System Navigator Modal (UI01) */}
+      <SystemNavigatorModal
+        isOpen={isNavigatorOpen}
+        onClose={() => setIsNavigatorOpen(false)}
+        bodies={engineRef.current?.bodies || []}
+        selectedBodyId={selectedBodyId}
+        onSelectBody={(id) => {
+          setSelectedBodyId(id);
+          selectedBodyIdRef.current = id;
+          sceneRef.current?.setSelectedBody(id);
+        }}
+      />
+
+      {/* Keyboard Shortcuts Reference (UI02) */}
+      <ShortcutsModal
+        isOpen={isShortcutsOpen}
+        onClose={() => setIsShortcutsOpen(false)}
+      />
+
+      {/* Astrometric System Overview Stats (UI05) */}
+      <SystemStatsModal
+        isOpen={isStatsOpen}
+        onClose={() => setIsStatsOpen(false)}
+        bodies={engineRef.current?.bodies || []}
+      />
+
+      {/* Audio Settings & Volume Control (UI08) */}
+      <AudioSettingsModal
+        isOpen={isAudioSettingsOpen}
+        onClose={() => setIsAudioSettingsOpen(false)}
+        audioEnabled={audioEnabled}
+        onToggleAudio={handleToggleAudio}
+      />
+
+      {/* First-Time Onboarding Coachmarks (UI04) */}
+      {isOnboardingOpen && (
+        <OnboardingOverlay onComplete={() => setIsOnboardingOpen(false)} />
+      )}
     </div>
+    </ErrorBoundary>
   );
 };
 export default App;

@@ -665,3 +665,79 @@ body {
     transition: none;
   }
 }
+
+/* Modal Backdrop & Shared Dialog Styling */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 5, 10, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.modal-content {
+  background: #0b1329;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  padding: 20px;
+  color: #f8fafc;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
+}
+
+.btn-primary {
+  background: #0284c7;
+  color: #ffffff;
+  border: 1px solid #38bdf8;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-primary:hover {
+  background: #0369a1;
+}
+
+.btn-secondary {
+  background: #1e293b;
+  color: #cbd5e1;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-secondary:hover {
+  background: #334155;
+}
+
+/* UI10 Astrometric Themes */
+.theme-tactical {
+  --accent-azure: #06b6d4;
+  --bg-primary: #020c14;
+}
+
+.theme-amber {
+  --accent-azure: #f59e0b;
+  --bg-primary: #120b02;
+}
+
+/* UI15 High-Contrast Accessibility Mode */
+.a11y-high-contrast {
+  filter: contrast(1.25);
+}
+
+.a11y-high-contrast button {
+  border-width: 2px !important;
+  font-weight: 800 !important;
+}
+
+.a11y-high-contrast input {
+  border-width: 2px !important;
+}
+
