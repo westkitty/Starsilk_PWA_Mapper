@@ -7,7 +7,8 @@ import { ThemeSelector, AstrometricTheme } from './ThemeSelector';
 import { AccessibilityControls } from './AccessibilityControls';
 import { ScreenshotTool } from './ScreenshotTool';
 import { VirialGauge } from './VirialGauge';
-import { BarChart2, Compass, HelpCircle, Share2, Rocket, Award, CloudSun, Sparkle, Activity, FileText, Navigation, Zap, Cpu } from 'lucide-react';
+import { RelativisticAberrationToggle } from './RelativisticAberrationToggle';
+import { BarChart2, Compass, HelpCircle, Share2, Rocket, Award, CloudSun, Sparkle, Activity, FileText, Navigation, Zap, Cpu, Sun, Orbit, Shield, Disc, Waves } from 'lucide-react';
 
 export type AppMode = 'BUILD' | 'SIMULATE' | 'FORECAST' | 'CANON LAB' | 'PRESENT';
 
@@ -44,6 +45,14 @@ interface TopBarProps {
   onOpenStellarIntruder?: () => void;
   onOpenShare?: () => void;
   onTogglePerf?: () => void;
+  onOpenBarycenter?: () => void;
+  onOpenSolarCycle?: () => void;
+  onOpenHighway?: () => void;
+  onOpenDysonSwarm?: () => void;
+  onOpenSynodic?: () => void;
+  onOpenEquipotential?: () => void;
+  onOpenPoynting?: () => void;
+  onOpenGravityGradient?: () => void;
   currentTheme?: AstrometricTheme;
   onSelectTheme?: (theme: AstrometricTheme) => void;
   isHighContrast?: boolean;
@@ -83,6 +92,14 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenStellarIntruder,
   onOpenShare,
   onTogglePerf,
+  onOpenBarycenter,
+  onOpenSolarCycle,
+  onOpenHighway,
+  onOpenDysonSwarm,
+  onOpenSynodic,
+  onOpenEquipotential,
+  onOpenPoynting,
+  onOpenGravityGradient,
   currentTheme = 'obsidian',
   onSelectTheme,
   isHighContrast = false,
@@ -360,6 +377,9 @@ export const TopBar: React.FC<TopBarProps> = ({
         {/* Screenshot Exporter */}
         <ScreenshotTool />
 
+        {/* Relativistic Aberration Toggle */}
+        <RelativisticAberrationToggle />
+
         {/* Hohmann Transfer Calculator */}
         {onOpenTransfer && (
           <button
@@ -537,6 +557,150 @@ export const TopBar: React.FC<TopBarProps> = ({
             title="Share System Link / Sigil"
           >
             <Share2 size={14} />
+          </button>
+        )}
+
+        {/* Barycenter Telemetry */}
+        {onOpenBarycenter && (
+          <button
+            onClick={onOpenBarycenter}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="System Center of Mass & Stellar Reflex Barycenter"
+          >
+            <Compass size={14} />
+          </button>
+        )}
+
+        {/* Solar Cycle & CME */}
+        {onOpenSolarCycle && (
+          <button
+            onClick={onOpenSolarCycle}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="Stellar Activity & Sunspot Cycle"
+          >
+            <Sun size={14} />
+          </button>
+        )}
+
+        {/* Interplanetary Highway (ITN) */}
+        {onOpenHighway && (
+          <button
+            onClick={onOpenHighway}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="Interplanetary Transport Network (ITN)"
+          >
+            <Orbit size={14} />
+          </button>
+        )}
+
+        {/* Dyson Swarm Planner */}
+        {onOpenDysonSwarm && (
+          <button
+            onClick={onOpenDysonSwarm}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="Dyson Swarm Megastructure Planner"
+          >
+            <Disc size={14} />
+          </button>
+        )}
+
+        {/* Synodic Periods */}
+        {onOpenSynodic && (
+          <button
+            onClick={onOpenSynodic}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="Planetary Synodic Alignment Calendar"
+          >
+            <Activity size={14} />
+          </button>
+        )}
+
+        {/* Roche Lobe Equipotential */}
+        {onOpenEquipotential && (
+          <button
+            onClick={onOpenEquipotential}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="Roche Lobe & Jacobi Equipotential"
+          >
+            <Shield size={14} />
+          </button>
+        )}
+
+        {/* Gravity Gradient Stabilization */}
+        {onOpenGravityGradient && (
+          <button
+            onClick={onOpenGravityGradient}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="Gravity Gradient Attitude Stabilization"
+          >
+            <Waves size={14} />
+          </button>
+        )}
+
+        {/* Poynting-Robertson Radiative Drag */}
+        {onOpenPoynting && (
+          <button
+            onClick={onOpenPoynting}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="Poynting-Robertson Dust Radiative Drag"
+          >
+            <Sparkle size={14} />
           </button>
         )}
 

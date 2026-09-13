@@ -17,6 +17,12 @@ interface ContextInspectorProps {
   onFocusBody: (id: string) => void;
   onStartGrabThrow: (body: CelestialBody) => void;
   onOpenCanonMacro: (macroId: string) => void;
+  onOpenSpectroscopy?: () => void;
+  onOpenElements?: () => void;
+  onOpenTidalHeating?: () => void;
+  onOpenMagnetosphere?: () => void;
+  onOpenSpaceElevator?: () => void;
+  onOpenTisserand?: () => void;
 }
 
 export const ContextInspector: React.FC<ContextInspectorProps> = ({
@@ -29,6 +35,12 @@ export const ContextInspector: React.FC<ContextInspectorProps> = ({
   onFocusBody,
   onStartGrabThrow,
   onOpenCanonMacro,
+  onOpenSpectroscopy,
+  onOpenElements,
+  onOpenTidalHeating,
+  onOpenMagnetosphere,
+  onOpenSpaceElevator,
+  onOpenTisserand,
 }) => {
   if (!selectedBody) return null;
 
@@ -317,6 +329,123 @@ export const ContextInspector: React.FC<ContextInspectorProps> = ({
           <Move size={14} />
           GRAB & THROW
         </button>
+
+        {/* Astrodynamic Analysis Modals */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+          {onOpenSpectroscopy && (
+            <button
+              onClick={onOpenSpectroscopy}
+              style={{
+                background: 'rgba(34, 211, 238, 0.1)',
+                border: '1px solid rgba(34, 211, 238, 0.3)',
+                color: '#22d3ee',
+                padding: '6px',
+                borderRadius: '6px',
+                fontSize: '10px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+              title="Optical Spectroscopy & Atmospheric Analysis"
+            >
+              🔬 SPECTRUM
+            </button>
+          )}
+
+          {onOpenElements && (
+            <button
+              onClick={onOpenElements}
+              style={{
+                background: 'rgba(251, 191, 36, 0.1)',
+                border: '1px solid rgba(251, 191, 36, 0.3)',
+                color: '#fbbf24',
+                padding: '6px',
+                borderRadius: '6px',
+                fontSize: '10px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+              title="Keplerian Orbital Elements"
+            >
+              📐 ELEMENTS
+            </button>
+          )}
+
+          {onOpenTidalHeating && (
+            <button
+              onClick={onOpenTidalHeating}
+              style={{
+                background: 'rgba(244, 63, 94, 0.1)',
+                border: '1px solid rgba(244, 63, 94, 0.3)',
+                color: '#f43f5e',
+                padding: '6px',
+                borderRadius: '6px',
+                fontSize: '10px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+              title="Tidal Heat & Volcanism Dissipation"
+            >
+              🌋 TIDAL HEAT
+            </button>
+          )}
+
+          {onOpenMagnetosphere && (
+            <button
+              onClick={onOpenMagnetosphere}
+              style={{
+                background: 'rgba(56, 189, 248, 0.1)',
+                border: '1px solid rgba(56, 189, 248, 0.3)',
+                color: '#38bdf8',
+                padding: '6px',
+                borderRadius: '6px',
+                fontSize: '10px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+              title="Magnetosphere & Radiation Shield"
+            >
+              🛡️ MAGNETO
+            </button>
+          )}
+
+          {onOpenSpaceElevator && (
+            <button
+              onClick={onOpenSpaceElevator}
+              style={{
+                background: 'rgba(20, 184, 166, 0.1)',
+                border: '1px solid rgba(20, 184, 166, 0.3)',
+                color: '#14b8a6',
+                padding: '6px',
+                borderRadius: '6px',
+                fontSize: '10px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+              title="Space Elevator Feasibility"
+            >
+              🗼 ELEVATOR
+            </button>
+          )}
+
+          {onOpenTisserand && (
+            <button
+              onClick={onOpenTisserand}
+              style={{
+                background: 'rgba(217, 70, 239, 0.1)',
+                border: '1px solid rgba(217, 70, 239, 0.3)',
+                color: '#d946ef',
+                padding: '6px',
+                borderRadius: '6px',
+                fontSize: '10px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+              title="Tisserand Invariant Calculator"
+            >
+              ☄️ TISSERAND
+            </button>
+          )}
+        </div>
 
         {/* Canon Actions */}
         {selectedBody.type === 'star' && (

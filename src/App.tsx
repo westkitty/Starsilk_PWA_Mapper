@@ -63,6 +63,20 @@ import { ProceduralGenModal } from './ui/ProceduralGenModal';
 import { StellarIntruderModal } from './ui/StellarIntruderModal';
 import { ShareSystemModal } from './ui/ShareSystemModal';
 import { PerfOverlay } from './ui/PerfOverlay';
+import { SpectroscopyModal } from './ui/SpectroscopyModal';
+import { BarycenterTelemetryModal } from './ui/BarycenterTelemetryModal';
+import { OrbitalElementsTableModal } from './ui/OrbitalElementsTableModal';
+import { TidalHeatMapModal } from './ui/TidalHeatMapModal';
+import { TisserandParameterModal } from './ui/TisserandParameterModal';
+import { SpaceElevatorModal } from './ui/SpaceElevatorModal';
+import { SolarCycleModal } from './ui/SolarCycleModal';
+import { MagnetosphereModal } from './ui/MagnetosphereModal';
+import { InterplanetaryHighwayModal } from './ui/InterplanetaryHighwayModal';
+import { DysonSwarmPlannerModal } from './ui/DysonSwarmPlannerModal';
+import { PoyntingRobertsonModal } from './ui/PoyntingRobertsonModal';
+import { EquipotentialContourModal } from './ui/EquipotentialContourModal';
+import { SynodicPeriodModal } from './ui/SynodicPeriodModal';
+import { GravityGradientTorqueModal } from './ui/GravityGradientTorqueModal';
 import { createSolarSystemPreset, createTrappist1Preset } from './simulation/presets/solar-system-presets';
 import { decodeSystemFromUrl } from './persistence/url-state';
 import { perfMonitor } from './core/perf-monitor';
@@ -169,6 +183,22 @@ export const App: React.FC = () => {
   const [isStellarIntruderOpen, setIsStellarIntruderOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isPerfOpen, setIsPerfOpen] = useState(false);
+
+  // Astrodynamics & Analysis Modals (Iteration 3)
+  const [isSpectroscopyOpen, setIsSpectroscopyOpen] = useState(false);
+  const [isBarycenterOpen, setIsBarycenterOpen] = useState(false);
+  const [isElementsOpen, setIsElementsOpen] = useState(false);
+  const [isTidalHeatOpen, setIsTidalHeatOpen] = useState(false);
+  const [isTisserandOpen, setIsTisserandOpen] = useState(false);
+  const [isSpaceElevatorOpen, setIsSpaceElevatorOpen] = useState(false);
+  const [isSolarCycleOpen, setIsSolarCycleOpen] = useState(false);
+  const [isMagnetosphereOpen, setIsMagnetosphereOpen] = useState(false);
+  const [isHighwayOpen, setIsHighwayOpen] = useState(false);
+  const [isDysonSwarmOpen, setIsDysonSwarmOpen] = useState(false);
+  const [isPoyntingOpen, setIsPoyntingOpen] = useState(false);
+  const [isEquipotentialOpen, setIsEquipotentialOpen] = useState(false);
+  const [isSynodicOpen, setIsSynodicOpen] = useState(false);
+  const [isGravityGradientOpen, setIsGravityGradientOpen] = useState(false);
 
   // Interaction & Instrumentation Expansion (#26–#50)
   const [isPrecisionMode, setIsPrecisionMode] = useState(false);
@@ -1300,6 +1330,14 @@ export const App: React.FC = () => {
           onOpenStellarIntruder={() => setIsStellarIntruderOpen(true)}
           onOpenShare={() => setIsShareOpen(true)}
           onTogglePerf={() => setIsPerfOpen(!isPerfOpen)}
+          onOpenBarycenter={() => setIsBarycenterOpen(true)}
+          onOpenSolarCycle={() => setIsSolarCycleOpen(true)}
+          onOpenHighway={() => setIsHighwayOpen(true)}
+          onOpenDysonSwarm={() => setIsDysonSwarmOpen(true)}
+          onOpenSynodic={() => setIsSynodicOpen(true)}
+          onOpenEquipotential={() => setIsEquipotentialOpen(true)}
+          onOpenPoynting={() => setIsPoyntingOpen(true)}
+          onOpenGravityGradient={() => setIsGravityGradientOpen(true)}
           currentTheme={currentTheme}
           onSelectTheme={(t) => setCurrentTheme(t)}
           isHighContrast={isHighContrast}
@@ -1363,6 +1401,12 @@ export const App: React.FC = () => {
             onOpenCanonMacro={(_macroId) => {
               setIsCanonLabOpen(true);
             }}
+            onOpenSpectroscopy={() => setIsSpectroscopyOpen(true)}
+            onOpenElements={() => setIsElementsOpen(true)}
+            onOpenTidalHeating={() => setIsTidalHeatOpen(true)}
+            onOpenMagnetosphere={() => setIsMagnetosphereOpen(true)}
+            onOpenSpaceElevator={() => setIsSpaceElevatorOpen(true)}
+            onOpenTisserand={() => setIsTisserandOpen(true)}
           />
         )}
 
@@ -1732,6 +1776,106 @@ export const App: React.FC = () => {
       <PerfOverlay
         isVisible={isPerfOpen}
         onToggle={() => setIsPerfOpen(!isPerfOpen)}
+      />
+
+      {/* Spectroscopy Modal (UI31) */}
+      <SpectroscopyModal
+        isOpen={isSpectroscopyOpen}
+        onClose={() => setIsSpectroscopyOpen(false)}
+        bodies={engineRef.current?.bodies || []}
+        selectedBodyId={selectedBodyId || undefined}
+      />
+
+      {/* Barycenter Telemetry Modal (UI32) */}
+      <BarycenterTelemetryModal
+        isOpen={isBarycenterOpen}
+        onClose={() => setIsBarycenterOpen(false)}
+        bodies={engineRef.current?.bodies || []}
+      />
+
+      {/* Orbital Elements Table Modal (UI34) */}
+      <OrbitalElementsTableModal
+        isOpen={isElementsOpen}
+        onClose={() => setIsElementsOpen(false)}
+        bodies={engineRef.current?.bodies || []}
+        selectedBodyId={selectedBodyId || undefined}
+      />
+
+      {/* Tidal Heat Map Modal (UI35) */}
+      <TidalHeatMapModal
+        isOpen={isTidalHeatOpen}
+        onClose={() => setIsTidalHeatOpen(false)}
+        bodies={engineRef.current?.bodies || []}
+        selectedBodyId={selectedBodyId || undefined}
+      />
+
+      {/* Tisserand Parameter Modal (UI36) */}
+      <TisserandParameterModal
+        isOpen={isTisserandOpen}
+        onClose={() => setIsTisserandOpen(false)}
+        bodies={engineRef.current?.bodies || []}
+        selectedBodyId={selectedBodyId || undefined}
+      />
+
+      {/* Space Elevator Modal (UI37) */}
+      <SpaceElevatorModal
+        isOpen={isSpaceElevatorOpen}
+        onClose={() => setIsSpaceElevatorOpen(false)}
+        bodies={engineRef.current?.bodies || []}
+        selectedBodyId={selectedBodyId || undefined}
+      />
+
+      {/* Solar Cycle Modal (UI38) */}
+      <SolarCycleModal
+        isOpen={isSolarCycleOpen}
+        onClose={() => setIsSolarCycleOpen(false)}
+      />
+
+      {/* Magnetosphere Modal (UI39) */}
+      <MagnetosphereModal
+        isOpen={isMagnetosphereOpen}
+        onClose={() => setIsMagnetosphereOpen(false)}
+        bodies={engineRef.current?.bodies || []}
+        selectedBodyId={selectedBodyId || undefined}
+      />
+
+      {/* Interplanetary Highway Modal (UI40) */}
+      <InterplanetaryHighwayModal
+        isOpen={isHighwayOpen}
+        onClose={() => setIsHighwayOpen(false)}
+        bodies={engineRef.current?.bodies || []}
+      />
+
+      {/* Dyson Swarm Planner Modal (UI41) */}
+      <DysonSwarmPlannerModal
+        isOpen={isDysonSwarmOpen}
+        onClose={() => setIsDysonSwarmOpen(false)}
+      />
+
+      {/* Poynting-Robertson Modal (UI42) */}
+      <PoyntingRobertsonModal
+        isOpen={isPoyntingOpen}
+        onClose={() => setIsPoyntingOpen(false)}
+      />
+
+      {/* Roche Lobe Equipotential Modal (UI43) */}
+      <EquipotentialContourModal
+        isOpen={isEquipotentialOpen}
+        onClose={() => setIsEquipotentialOpen(false)}
+        bodies={engineRef.current?.bodies || []}
+      />
+
+      {/* Synodic Period Modal (UI44) */}
+      <SynodicPeriodModal
+        isOpen={isSynodicOpen}
+        onClose={() => setIsSynodicOpen(false)}
+        bodies={engineRef.current?.bodies || []}
+      />
+
+      {/* Gravity Gradient Torque Modal (UI45) */}
+      <GravityGradientTorqueModal
+        isOpen={isGravityGradientOpen}
+        onClose={() => setIsGravityGradientOpen(false)}
       />
     </div>
     </ErrorBoundary>

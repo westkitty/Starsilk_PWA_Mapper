@@ -20,6 +20,7 @@ export type SimulationEventType =
   | "timeline:pause_toggle"
   | "toast:notify"
   | "system:toast"
+  | "ui:toast"
   | "challenge:progress"
   | "perf:report";
 
@@ -40,6 +41,7 @@ export interface EventPayloads {
   "timeline:pause_toggle": { isPaused: boolean };
   "toast:notify": { message: string; type?: "info" | "success" | "warn" | "error"; durationMs?: number };
   "system:toast": { title?: string; message: string; type?: "info" | "success" | "warn" | "warning" | "error"; durationMs?: number };
+  "ui:toast": { message: string; type?: "info" | "success" | "warn" | "warning" | "error"; durationMs?: number };
   "challenge:progress": { challengeId: string; isComplete: boolean; progressPct: number };
   "perf:report": { fps: number; frameDeltaMs: number; physicsStepMs: number; drawCalls: number };
 }
@@ -82,6 +84,18 @@ export class EventBus {
 
   clear(): void {
     this.listeners = {};
+  }
+
+  public static on<K extends SimulationEventType>(event: K, listener: EventListener<K>): () => void {
+    return eventBus.on(event, listener);
+  }
+
+  public static off<K extends SimulationEventType>(event: K, listener: EventListener<K>): void {
+    eventBus.off(event, listener);
+  }
+
+  public static emit<K extends SimulationEventType>(event: K, payload: EventPayloads[K]): void {
+    eventBus.emit(event, payload);
   }
 }
 

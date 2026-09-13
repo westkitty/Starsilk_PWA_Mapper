@@ -17,7 +17,8 @@ export type BodyType =
   | 'ship'
   | 'black_hole'
   | 'megastructure'
-  | 'hookshot_node';
+  | 'hookshot_node'
+  | 'asteroid';
 
 export type PlanetClassification = 
   | 'rocky'
@@ -61,6 +62,8 @@ export interface CelestialBody {
   type: BodyType;
   massKg: number;
   radiusKm: number;
+  mass?: number;
+  radius?: number;
   position: Vector3D; // km
   velocity: Vector3D; // km/s
   fixed?: boolean; // Anchored in space if true
