@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Vector3, Box3 } from 'three';
 import { AdaptiveTimestepController } from '../simulation/adaptive-timestep';
+import { SimulationEngine } from '../simulation/engine';
+import { WorkerIntegratorBridge } from '../simulation/worker-integrator-bridge';
 import { SPKEphemerisEvaluator } from '../simulation/spk-ephemeris-parser';
 import { MemoryGovernor } from '../core/memory-governor';
 import { OcclusionCuller } from '../rendering/occlusion-culler';
@@ -49,8 +51,8 @@ import { SpectroscopyChartGenerator } from '../rendering/spectroscopy-chart';
 describe('Recursive Pass 3 Verification Suite', () => {
   // --- Backend / Technical Tests ---
 
-  it('BACK31: Adaptive Runge-Kutta-Fehlberg timestep scales dt on truncation error', () => {
-    const controller = new AdaptiveTimestepController(0.001, 1.0, 1e-4);
+  it('BACK31: Step-Doubling Adaptive Velocity Verlet controller scales dt on truncation error and integrates into engine', () => {
+    const controller = new AdaptiveTimestepController(0.001, 100.0, 1e-4);
     const p4 = [new Vector3(1, 0, 0)];
     const p5SmallDiff = [new Vector3(1.00001, 0, 0)];
     const resGood = controller.evaluateStep(p4, p5SmallDiff, 0.1);
@@ -61,6 +63,41 @@ describe('Recursive Pass 3 Verification Suite', () => {
     const resBad = controller.evaluateStep(p4, p5LargeDiff, 0.1);
     expect(resBad.accepted).toBe(false);
     expect(resBad.nextDt).toBeLessThan(0.1);
+
+    // Verify stepAdaptiveVerlet step doubling
+    const bodies: CelestialBody[] = [
+      { id: 'sun', name: 'Sun', type: 'star', color: '#fff', massKg: 1.989e30, radiusKm: 696340, position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, fixed: true },
+      { id: 'earth', name: 'Earth', type: 'planet', color: '#00f', massKg: 5.972e24, radiusKm: 6371, position: { x: 1.496e8, y: 0, z: 0 }, velocity: { x: 0, y: 29.78, z: 0 } },
+    ];
+    const stepRes = controller.stepAdaptiveVerlet(bodies, 60.0);
+    expect(stepRes.success).toBe(true);
+    expect(stepRes.accepted).toBe(true);
+    expect(stepRes.actualDt).toBe(60.0);
+    expect(stepRes.bodies[1].position.y).toBeGreaterThan(0);
+
+    // Verify SimulationEngine default fixed-step behavior (disabled)
+    const engineFixed = new SimulationEngine(bodies);
+    engineFixed.adaptiveTimestepEnabled = false;
+    engineFixed.timeScale = 1.0;
+    engineFixed.update(0.1); // simDt = 0.1s; accumulator = 0.1s < 60s -> 0 substeps taken
+    expect(engineFixed.timeSec).toBe(0);
+    engineFixed.timeScale = 600;
+    for (let i = 0; i < 10; i++) {
+      engineFixed.update(0.1); // 10 * (0.1 * 600) = 600s simDt -> accumulator reaches 600s stepSize
+    }
+    expect(engineFixed.timeSec).toBe(600.0);
+
+    // Verify SimulationEngine adaptive mode (enabled)
+    const engineAdaptive = new SimulationEngine(bodies);
+    engineAdaptive.adaptiveTimestepEnabled = true;
+    engineAdaptive.adaptiveController.setMinDt(1.0);
+    engineAdaptive.adaptiveController.setMaxDt(3600.0);
+    engineAdaptive.timeScale = 60.0;
+    engineAdaptive.update(0.1); // 0.1 * 60 = 6s simDt >= minDt (1.0)
+    expect(engineAdaptive.timeSec).toBeGreaterThan(0);
+    expect(engineAdaptive.currentAdaptiveDt).toBeGreaterThanOrEqual(1.0);
+    expect(engineAdaptive.currentAdaptiveDt).toBeLessThanOrEqual(3600.0);
+    expect(Number.isFinite(engineAdaptive.bodies[1].position.x)).toBe(true);
   });
 
   it('BACK32: SPK Chebyshev polynomial evaluator computes Clenshaw coordinates', () => {
@@ -241,11 +278,26 @@ describe('Recursive Pass 3 Verification Suite', () => {
     expect(mockPanner.positionX.setValueAtTime).toHaveBeenCalledWith(10, 10);
   });
 
-  it('BACK44: Worker Thread Pool dispatches tasks and terminates cleanly', async () => {
+  it('BACK44: Worker Thread Pool dispatches tasks and integrates with WorkerIntegratorBridge', async () => {
     const pool = new WorkerThreadPool(2);
     const res: any = await pool.enqueue('test_task', { value: 123 });
     expect(res.success).toBe(true);
     expect(res.data.value).toBe(123);
+
+    // Verify WorkerIntegratorBridge integration
+    const bridge = new WorkerIntegratorBridge(pool);
+    const testBodies: CelestialBody[] = [
+      { id: 'b1', name: 'B1', type: 'planet', color: '#fff', massKg: 1e20, radiusKm: 100, position: { x: 0, y: 0, z: 0 }, velocity: { x: 10, y: 0, z: 0 } },
+    ];
+    const bridgeRes = await bridge.runLongTermPropagation({
+      bodies: testBodies,
+      stepDtSeconds: 60,
+      totalSteps: 5,
+    });
+    expect(bridgeRes.completedSteps).toBe(5);
+    expect(bridgeRes.executionMs).toBeGreaterThanOrEqual(0);
+    expect(bridgeRes.finalBodies[0].position.x).toBeGreaterThan(0);
+
     pool.terminate();
     expect(pool.getActiveWorkerCount()).toBe(0);
   });
@@ -319,15 +371,43 @@ describe('Recursive Pass 3 Verification Suite', () => {
     expect(stateSolarMax.cmeProbabilityPerDay).toBeGreaterThan(stateSolarMin.cmeProbabilityPerDay);
   });
 
-  it('GAME38: Interplanetary Highway Engine generates invariant manifold transit corridors', () => {
+  it('GAME38: CR3BP Transit Corridor Approximation generates parameter-sensitive L1/L2 corridors', () => {
     const l1 = new Vector3(0.85, 0, 0);
     const l2 = new Vector3(1.15, 0, 0);
     const prim = new Vector3(0, 0, 0);
-    const sec = new Vector3(1, 0, 0);
-    const tubes = InterplanetaryHighwayEngine.generateManifolds(l1, l2, prim, sec);
-    expect(tubes.length).toBe(2);
-    expect(tubes[0].originLagrangePoint).toBe('L1');
-    expect(tubes[1].originLagrangePoint).toBe('L2');
+    const sec1 = new Vector3(1, 0, 0);
+
+    // Base calculation (Sun - Jupiter mass ratio mu ~ 0.001)
+    const tubes1 = InterplanetaryHighwayEngine.generateManifolds(l1, l2, prim, sec1, 1.0, 0.001);
+    expect(tubes1.length).toBe(2);
+    expect(tubes1[0].originLagrangePoint).toBe('L1');
+    expect(tubes1[1].originLagrangePoint).toBe('L2');
+
+    // 1. Changing mass ratio changes Hill radius
+    const tubesHeavier = InterplanetaryHighwayEngine.generateManifolds(l1, l2, prim, sec1, 1.0, 0.01);
+    expect(tubesHeavier[0].hillRadiusAu).toBeGreaterThan(tubes1[0].hillRadiusAu);
+
+    // 2. Changing separation changes corridor scale
+    const secDistant = new Vector3(5.2, 0, 0);
+    const tubesDistant = InterplanetaryHighwayEngine.generateManifolds(new Vector3(4.5, 0, 0), new Vector3(5.9, 0, 0), prim, secDistant, 1.0, 0.001);
+    expect(tubesDistant[0].hillRadiusAu).toBeGreaterThan(tubes1[0].hillRadiusAu);
+
+    // 3. Output contains finite coordinates
+    for (const pt of tubes1[0].trajectorySpline) {
+      expect(Number.isFinite(pt.x)).toBe(true);
+      expect(Number.isFinite(pt.y)).toBe(true);
+      expect(Number.isFinite(pt.z)).toBe(true);
+    }
+
+    // 4. L1 and L2 corridor directions differ along primary-secondary axis
+    const l1End = tubes1[0].trajectorySpline[tubes1[0].trajectorySpline.length - 1];
+    const l2End = tubes1[1].trajectorySpline[tubes1[1].trajectorySpline.length - 1];
+    expect(l1End.x).toBeLessThan(l2End.x);
+
+    // 5. Extreme/invalid inputs handled safely
+    const edgeTubes = InterplanetaryHighwayEngine.generateManifolds(l1, l2, prim, sec1, 0.0001, 0.000001);
+    expect(edgeTubes.length).toBe(2);
+    expect(edgeTubes[0].transferDurationDays).toBeGreaterThan(0);
   });
 
   it('GAME39: Dyson Swarm Engine models power harvested and Kardashev rating', () => {
@@ -372,11 +452,51 @@ describe('Recursive Pass 3 Verification Suite', () => {
     expect(snMassive.remnantType).toBe('neutron_star');
   });
 
-  it('GAME45: Oort Comet Injector spawns perturbed comets with near-parabolic orbits', () => {
-    const comet = OortCometInjector.spawnInjectedComet('comet-1', 'C/2026 X1', 1.0, 0.5);
+  it('GAME45: Oort-Cloud Long-Period Comet Injection Generator spawns near-parabolic inbound comets', () => {
+    // 1. Fixed arrival angle test for deterministic verification
+    const comet = OortCometInjector.spawnInjectedComet('comet-1', 'C/2026 X1', 1.0, 0.5, { theta: 0, phi: Math.PI / 2 });
     expect(comet.type).toBe('asteroid');
     expect(comet.name).toBe('C/2026 X1');
-    expect(comet.velocity).toBeDefined();
+
+    // 2. Radial velocity is inward at injection: pos . vel < 0
+    const rDotV = comet.position.x * comet.velocity.x + comet.position.y * comet.velocity.y + comet.position.z * comet.velocity.z;
+    expect(rDotV).toBeLessThan(0);
+
+    // 3. State vectors are finite
+    expect(Number.isFinite(comet.position.x)).toBe(true);
+    expect(Number.isFinite(comet.position.y)).toBe(true);
+    expect(Number.isFinite(comet.position.z)).toBe(true);
+    expect(Number.isFinite(comet.velocity.x)).toBe(true);
+    expect(Number.isFinite(comet.velocity.y)).toBe(true);
+    expect(Number.isFinite(comet.velocity.z)).toBe(true);
+
+    // 4. Specific orbital energy is negative (bound) and near parabolic
+    const r = Math.sqrt(comet.position.x ** 2 + comet.position.y ** 2 + comet.position.z ** 2);
+    const vSq = comet.velocity.x ** 2 + comet.velocity.y ** 2 + comet.velocity.z ** 2;
+    const energy = vSq / 2 - 1.0 / r; // mu = G*M = 1.0
+    expect(energy).toBeLessThan(0);
+    expect(energy).toBeGreaterThan(-0.001); // near parabolic (a ~ 7500 AU -> 1/2a ~ -0.000067)
+
+    // 5. Requested perihelion materially influences angular momentum
+    const cometWide = OortCometInjector.spawnInjectedComet('comet-2', 'C/2026 X2', 1.0, 2.0, { theta: 0, phi: Math.PI / 2 });
+    const posVec1 = new Vector3(comet.position.x, comet.position.y, comet.position.z);
+    const velVec1 = new Vector3(comet.velocity.x, comet.velocity.y, comet.velocity.z);
+    const h1 = new Vector3().crossVectors(posVec1, velVec1).length();
+
+    const posVec2 = new Vector3(cometWide.position.x, cometWide.position.y, cometWide.position.z);
+    const velVec2 = new Vector3(cometWide.velocity.x, cometWide.velocity.y, cometWide.velocity.z);
+    const h2 = new Vector3().crossVectors(posVec2, velVec2).length();
+    expect(h2).toBeGreaterThan(h1); // wider perihelion -> larger angular momentum
+
+    // 6. Samples vary in orientation
+    const randCometA = OortCometInjector.spawnInjectedComet('c-a', 'A', 1.0);
+    const randCometB = OortCometInjector.spawnInjectedComet('c-b', 'B', 1.0);
+    const dist = Math.sqrt(
+      (randCometA.position.x - randCometB.position.x) ** 2 +
+      (randCometA.position.y - randCometB.position.y) ** 2 +
+      (randCometA.position.z - randCometB.position.z) ** 2
+    );
+    expect(dist).toBeGreaterThan(0);
   });
 
   // --- Rendering / Asset Tests ---

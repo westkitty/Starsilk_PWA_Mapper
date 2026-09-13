@@ -1,11 +1,12 @@
 /**
  * Asynchronous Web Worker N-Body Integrator Bridge.
- * Allows CPU-heavy numerical integrations (e.g. 10,000-year ephemeris forecasts)
- * to run asynchronously off the main UI thread with synchronous fallback.
+ * Allows CPU-heavy numerical integrations (e.g. multi-step ephemeris forecasts)
+ * to run asynchronously off the main UI thread via WorkerThreadPool with synchronous fallback.
  */
 
 import { CelestialBody } from './types';
 import { integrateStep } from './integrator';
+import { WorkerThreadPool } from '../core/thread-pool';
 
 export interface IntegrationJobRequest {
   bodies: CelestialBody[];
@@ -20,7 +21,12 @@ export interface IntegrationJobResult {
 }
 
 export class WorkerIntegratorBridge {
+  private pool: WorkerThreadPool;
   private isBusy = false;
+
+  constructor(pool?: WorkerThreadPool) {
+    this.pool = pool || new WorkerThreadPool(2);
+  }
 
   public async runLongTermPropagation(job: IntegrationJobRequest): Promise<IntegrationJobResult> {
     if (this.isBusy) {
@@ -31,8 +37,21 @@ export class WorkerIntegratorBridge {
     const start = performance.now();
 
     try {
-      // Synchronous batch execution (or Worker task if worker is spawned)
-      // Clones input bodies so simulation state is preserved
+      // Attempt background Web Worker execution via WorkerThreadPool
+      const res: any = await this.pool.enqueue('nbody_propagation', {
+        bodies: job.bodies,
+        stepDtSeconds: job.stepDtSeconds,
+        totalSteps: job.totalSteps,
+      });
+
+      const duration = performance.now() - start;
+      return {
+        finalBodies: res.finalBodies || job.bodies,
+        completedSteps: res.completedSteps || job.totalSteps,
+        executionMs: duration,
+      };
+    } catch {
+      // Synchronous batch execution fallback
       let currentBodies: CelestialBody[] = job.bodies.map(b => ({
         ...b,
         position: { ...b.position },
@@ -52,6 +71,10 @@ export class WorkerIntegratorBridge {
     } finally {
       this.isBusy = false;
     }
+  }
+
+  public getPool(): WorkerThreadPool {
+    return this.pool;
   }
 
   public getBusyStatus(): boolean {

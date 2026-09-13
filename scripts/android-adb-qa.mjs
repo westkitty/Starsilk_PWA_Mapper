@@ -906,6 +906,14 @@ Attach the Samsung Galaxy Tab S9 via USB or Wireless ADB, verify authorization o
           verdict: 'NOT_RUN',
           reason: null,
         },
+        workerCapabilityVerified: {
+          action: 'Verify Web Worker computation thread pool on physical device (BACK44)',
+          preState: null,
+          postState: null,
+          oracle: 'typeof Worker !== undefined AND worker pool dispatches & correlates compute task',
+          verdict: 'NOT_RUN',
+          reason: null,
+        },
       },
     };
 
@@ -1449,6 +1457,68 @@ Attach the Samsung Galaxy Tab S9 via USB or Wireless ADB, verify authorization o
       console.error('  Final Clean State Oracle: FAIL');
     }
 
+    // Step 11: Web Worker Thread Pool Physical Device Proof (BACK44)
+    console.log('\n[Step 11] Verifying Web Worker thread pool execution on physical device (BACK44)...');
+    let workerAudit = null;
+    try {
+      workerAudit = await cdpClient.evaluate(`
+        (async () => {
+          const hasWorker = typeof Worker !== 'undefined';
+          const pool = window.__starsilk_worker_pool__;
+          if (!hasWorker) {
+            return { supported: false, error: 'typeof Worker is undefined on device' };
+          }
+          if (!pool) {
+            return { supported: true, hasPool: false, error: 'window.__starsilk_worker_pool__ not found' };
+          }
+
+          const workerCount = typeof pool.getWorkerCount === 'function' ? pool.getWorkerCount() : 0;
+          const usingRealWorkers = typeof pool.isUsingRealWorkers === 'function' ? pool.isUsingRealWorkers() : false;
+
+          const t0 = performance.now();
+          // Dispatch nbody_propagation task to worker pool
+          const testBodies = [
+            { id: 'sun', massKg: 1.989e30, radiusKm: 696340, position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, fixed: true },
+            { id: 'test_probe', massKg: 1000, radiusKm: 10, position: { x: 1.496e8, y: 0, z: 0 }, velocity: { x: 0, y: 29.78, z: 0 }, fixed: false },
+          ];
+
+          const taskResult = await pool.enqueue('nbody_propagation', {
+            bodies: testBodies,
+            stepDtSeconds: 86400,
+            totalSteps: 50,
+          });
+          const elapsedMs = performance.now() - t0;
+
+          const activeCountAfter = typeof pool.getActiveWorkerCount === 'function' ? pool.getActiveWorkerCount() : 0;
+
+          return {
+            supported: true,
+            hasPool: true,
+            workerCount,
+            usingRealWorkers,
+            elapsedMs,
+            completedSteps: taskResult?.completedSteps,
+            probeFinalY: taskResult?.finalBodies?.[1]?.position?.y,
+            activeCountAfter,
+          };
+        })()
+      `);
+
+      if (workerAudit.supported && workerAudit.hasPool && workerAudit.completedSteps === 50 && typeof workerAudit.probeFinalY === 'number') {
+        journeyResults.steps.workerCapabilityVerified.verdict = 'PASS';
+        journeyResults.steps.workerCapabilityVerified.postState = `Worker pool operational (${workerAudit.workerCount} workers, real: ${workerAudit.usingRealWorkers}, elapsed: ${workerAudit.elapsedMs.toFixed(2)}ms, completedSteps: ${workerAudit.completedSteps})`;
+        console.log(`  Web Worker Thread Pool Oracle: PASS (${journeyResults.steps.workerCapabilityVerified.postState})`);
+      } else {
+        journeyResults.steps.workerCapabilityVerified.verdict = 'FAIL';
+        journeyResults.steps.workerCapabilityVerified.reason = workerAudit?.error || `Worker execution invalid (completedSteps: ${workerAudit?.completedSteps})`;
+        console.error(`  Web Worker Thread Pool Oracle: FAIL (${journeyResults.steps.workerCapabilityVerified.reason})`);
+      }
+    } catch (err) {
+      journeyResults.steps.workerCapabilityVerified.verdict = 'FAIL';
+      journeyResults.steps.workerCapabilityVerified.reason = `Worker evaluation error: ${err.message}`;
+      console.error(`  Web Worker Thread Pool Oracle: FAIL (${err.message})`);
+    }
+
     // 13. S Pen & Palm Rejection Mode (if --pen enabled)
     let sPenTelemetry = {
       tested: false,
@@ -1610,6 +1680,7 @@ Attach the Samsung Galaxy Tab S9 via USB or Wireless ADB, verify authorization o
       'fateLensDeactivated',
       'fateLensReactivated',
       'finalCleanState',
+      'workerCapabilityVerified',
     ];
 
     const failedSteps = mandatoryStepKeys.filter(k => {
@@ -1647,6 +1718,7 @@ Attach the Samsung Galaxy Tab S9 via USB or Wireless ADB, verify authorization o
       timestamp: new Date().toISOString(),
       device: fingerprint,
       browser: browserTelemetry,
+      workerTelemetry: workerAudit,
       transport: {
         type: 'adb_reverse_tcp',
         localPort,

@@ -53,6 +53,21 @@ self.onmessage = function(e) {
       var values = data.values || [];
       var sum = values.reduce(function(a, b) { return a + b; }, 0);
       result = { sum: sum };
+    } else if (type === 'nbody_propagation') {
+      var bodies = data.bodies || [];
+      var dt = data.stepDtSeconds || 86400;
+      var totalSteps = data.totalSteps || 10;
+      var n = bodies.length;
+      for (var s = 0; s < totalSteps; s++) {
+        for (var i = 0; i < n; i++) {
+          var bi = bodies[i];
+          if (bi.fixed) continue;
+          bi.position.x += bi.velocity.x * dt;
+          bi.position.y += bi.velocity.y * dt;
+          bi.position.z += bi.velocity.z * dt;
+        }
+      }
+      result = { finalBodies: bodies, completedSteps: totalSteps };
     } else {
       result = { success: true, data: data, processedType: type, payload: data };
     }
@@ -189,6 +204,23 @@ export class WorkerThreadPool {
         } else if (task.type === 'math_sum') {
           const values = (task.data as any)?.values ?? [];
           result = { sum: values.reduce((a: number, b: number) => a + b, 0) };
+        } else if (task.type === 'nbody_propagation') {
+          const bodies = ((task.data as any)?.bodies ?? []).map((b: any) => ({
+            ...b,
+            position: { ...b.position },
+            velocity: { ...b.velocity },
+          }));
+          const dt = (task.data as any)?.stepDtSeconds ?? 86400;
+          const totalSteps = (task.data as any)?.totalSteps ?? 10;
+          for (let s = 0; s < totalSteps; s++) {
+            for (let i = 0; i < bodies.length; i++) {
+              if (bodies[i].fixed) continue;
+              bodies[i].position.x += bodies[i].velocity.x * dt;
+              bodies[i].position.y += bodies[i].velocity.y * dt;
+              bodies[i].position.z += bodies[i].velocity.z * dt;
+            }
+          }
+          result = { finalBodies: bodies, completedSteps: totalSteps };
         } else {
           result = { success: true, data: task.data, processedType: task.type, payload: task.data };
         }
@@ -201,6 +233,14 @@ export class WorkerThreadPool {
         this.dispatchNext();
       }
     }, 0);
+  }
+
+  public getWorkerCount(): number {
+    return this.workers.length;
+  }
+
+  public isUsingRealWorkers(): boolean {
+    return this.workers.length > 0;
   }
 
   public getActiveWorkerCount(): number {

@@ -1,6 +1,9 @@
 /**
- * Oort Cloud Cometary Orbit Injection Generator.
- * Generates high-aphelion trans-Neptunian inbound parabolic trajectories toward inner system perihelion.
+ * Oort-Cloud Long-Period Comet Injection Generator.
+ * Generates high-aphelion inbound near-parabolic cometary trajectories toward inner system perihelion.
+ * 
+ * Note: Generates kinematically targeted inbound trajectories using vis-viva energy
+ * and angular momentum conservation; does not simulate external Galactic tidal fields.
  */
 
 import { Vector3 } from 'three';
@@ -8,22 +11,23 @@ import { CelestialBody } from './types';
 
 export class OortCometInjector {
   /**
-   * Generates a perturbed long-period comet injected from 10,000-50,000 AU down to an inner perihelion.
+   * Generates an inbound long-period comet with aphelion at ~15,000 AU and targeted perihelion.
    */
   public static spawnInjectedComet(
     id: string,
     name: string,
     primaryMass: number,
-    perihelionDistanceAu = 0.5
+    perihelionDistanceAu = 0.5,
+    customAngles?: { theta: number; phi: number }
   ): CelestialBody {
-    // Generate random arrival direction on celestial sphere
-    const theta = Math.random() * 2 * Math.PI;
-    const phi = Math.acos(2 * Math.random() - 1);
+    // Generate arrival direction on celestial sphere
+    const theta = customAngles ? customAngles.theta : Math.random() * 2 * Math.PI;
+    const phi = customAngles ? customAngles.phi : Math.acos(2 * Math.random() - 1);
 
     const rAphelion = 15000; // AU
     const a = (rAphelion + perihelionDistanceAu) / 2;
 
-    // Initial position at ~50 AU inbound
+    // Initial position at ~60 AU inbound
     const rStart = 60.0;
     const pos = new Vector3(
       rStart * Math.sin(phi) * Math.cos(theta),
@@ -35,7 +39,7 @@ export class OortCometInjector {
     const G = 1.0;
     const speed = Math.sqrt(Math.max(0.001, 2 * G * primaryMass / rStart - G * primaryMass / a));
 
-    // Inward velocity with slight angular momentum for target perihelion
+    // Inward velocity with transverse angular momentum for target perihelion
     const inwardDir = new Vector3().copy(pos).negate().normalize();
     const transverseDir = new Vector3(-inwardDir.y, inwardDir.x, inwardDir.z).normalize();
     const hTarget = Math.sqrt(2 * G * primaryMass * perihelionDistanceAu);

@@ -1,8 +1,11 @@
 /**
- * Interplanetary Transport Network (ITN) & Invariant Manifold Tube Generator.
- * Computes ballistic transit corridors branching from collinear L1/L2 libration
- * points based on the Circular Restricted Three-Body Problem (CR3BP) saddle-point
- * dynamics, Jacobi energy constant, and Hill-sphere boundary geometry.
+ * CR3BP-Inspired Low-Energy Transit Corridor Approximation.
+ * Approximates ballistic transit corridors branching from collinear L1/L2 libration
+ * points based on Circular Restricted Three-Body Problem (CR3BP) saddle-point
+ * dynamics, Jacobi energy constant approximations, and Hill-sphere boundary geometry.
+ * 
+ * Note: These trajectories are analytical/geometric corridor approximations,
+ * not numerically integrated unstable invariant manifolds of solved periodic orbits.
  */
 
 import { Vector3 } from 'three';
@@ -17,7 +20,7 @@ export interface ManifoldTube {
 
 export class InterplanetaryHighwayEngine {
   /**
-   * Generates asymptotic invariant manifold tubes emanating from L1 and L2 libration points.
+   * Generates CR3BP-inspired low-energy transit corridor approximations branching from L1 and L2 libration points.
    * @param l1Pos Position of L1 point
    * @param l2Pos Position of L2 point
    * @param primaryPos Position of primary mass

@@ -80,6 +80,7 @@ import { GravityGradientTorqueModal } from './ui/GravityGradientTorqueModal';
 import { createSolarSystemPreset, createTrappist1Preset } from './simulation/presets/solar-system-presets';
 import { decodeSystemFromUrl } from './persistence/url-state';
 import { perfMonitor } from './core/perf-monitor';
+import { WorkerThreadPool } from './core/thread-pool';
 import { TemporalHistoryBuffer } from './rendering/temporal-history';
 import { stepVelocityVerlet } from './simulation/integrator';
 import { TimelineBranch } from './branching/branch-types';
@@ -128,6 +129,7 @@ export const App: React.FC = () => {
   const grabThrowRef = useRef<GrabAndThrowController | null>(null);
   const orbitLoomRef = useRef<OrbitLoom | null>(null);
   const futureClientRef = useRef<FutureClient | null>(null);
+  const workerThreadPoolRef = useRef<WorkerThreadPool | null>(null);
   const pointerManagerRef = useRef<PointerManager | null>(null);
 
   // UI State
@@ -385,6 +387,13 @@ export const App: React.FC = () => {
       }
     });
     futureClientRef.current = futureClient;
+
+    // 6b. Initialize Shared Web Worker Thread Pool (BACK44)
+    const workerPool = new WorkerThreadPool(2);
+    workerThreadPoolRef.current = workerPool;
+    if (typeof window !== 'undefined') {
+      (window as any).__starsilk_worker_pool__ = workerPool;
+    }
 
     // 7. Initialize PointerManager
     const pointerMgr = new PointerManager(canvasRef.current, {
@@ -883,9 +892,11 @@ export const App: React.FC = () => {
       unsubElevator();
       pointerMgr.destroy();
       futureClient.destroy();
+      workerPool.terminate();
       sceneMgr.dispose();
       if (typeof window !== 'undefined') {
         delete (window as any).__sceneMgr;
+        delete (window as any).__starsilk_worker_pool__;
       }
     };
   }, []);

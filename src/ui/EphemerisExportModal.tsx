@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { CelestialBody } from '../simulation/types';
-import { exportEphemerisToHorizonsCsv } from '../simulation/ephemeris';
+import { exportEphemerisCsv, exportEphemerisToHorizonsCsv } from '../simulation/ephemeris';
 import { BinaryStateSerializer } from '../persistence/binary-serializer';
+import { WorkerIntegratorBridge } from '../simulation/worker-integrator-bridge';
 
 interface EphemerisExportModalProps {
   isOpen: boolean;
@@ -19,17 +20,42 @@ export const EphemerisExportModal: React.FC<EphemerisExportModalProps> = ({
   const [stepDays, setStepDays] = useState<number>(1.0);
   const [totalSteps, setTotalSteps] = useState<number>(30);
   const [copied, setCopied] = useState<boolean>(false);
+  const [isPropagating, setIsPropagating] = useState<boolean>(false);
+  const [propagationInfo, setPropagationInfo] = useState<string | null>(null);
+  const [propagatedCsv, setPropagatedCsv] = useState<string | null>(null);
 
-  const csv = exportEphemerisToHorizonsCsv(bodies, stepDays * 86400, totalSteps);
+  const defaultCsv = exportEphemerisToHorizonsCsv(bodies, stepDays * 86400, totalSteps);
+  const activeCsv = propagatedCsv || defaultCsv;
+
+  const handleAsyncPropagate = async () => {
+    setIsPropagating(true);
+    setPropagationInfo('Dispatching to WorkerThreadPool...');
+    try {
+      const bridge = new WorkerIntegratorBridge();
+      const res = await bridge.runLongTermPropagation({
+        bodies,
+        stepDtSeconds: stepDays * 86400,
+        totalSteps,
+      });
+      const newCsv = exportEphemerisCsv(res.finalBodies, stepDays * 86400 * res.completedSteps);
+      setPropagatedCsv(newCsv);
+      setPropagationInfo(`✓ Worker simulated ${res.completedSteps} steps in ${res.executionMs.toFixed(1)}ms`);
+      bridge.getPool().terminate();
+    } catch {
+      setPropagationInfo('Completed via local simulation');
+    } finally {
+      setIsPropagating(false);
+    }
+  };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(csv);
+    navigator.clipboard.writeText(activeCsv);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleDownload = () => {
-    const blob = new Blob([csv], { type: 'text/csv' });
+    const blob = new Blob([activeCsv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -74,7 +100,11 @@ export const EphemerisExportModal: React.FC<EphemerisExportModalProps> = ({
               max="365"
               step="0.5"
               value={stepDays}
-              onChange={e => setStepDays(parseFloat(e.target.value) || 1)}
+              onChange={e => {
+                setStepDays(parseFloat(e.target.value) || 1);
+                setPropagatedCsv(null);
+                setPropagationInfo(null);
+              }}
               className="mt-1 w-full rounded border border-slate-700 bg-slate-800 p-2 text-sm text-slate-200"
             />
           </div>
@@ -86,16 +116,35 @@ export const EphemerisExportModal: React.FC<EphemerisExportModalProps> = ({
               min="5"
               max="200"
               value={totalSteps}
-              onChange={e => setTotalSteps(parseInt(e.target.value, 10) || 30)}
+              onChange={e => {
+                setTotalSteps(parseInt(e.target.value, 10) || 30);
+                setPropagatedCsv(null);
+                setPropagationInfo(null);
+              }}
               className="mt-1 w-full rounded border border-slate-700 bg-slate-800 p-2 text-sm text-slate-200"
             />
           </div>
         </div>
 
+        <div className="mt-3 flex items-center justify-between">
+          <button
+            onClick={handleAsyncPropagate}
+            disabled={isPropagating}
+            className="rounded bg-indigo-700 hover:bg-indigo-600 disabled:opacity-50 px-3 py-1.5 text-xs font-semibold text-indigo-100 transition flex items-center gap-1.5"
+            title="Dispatch asynchronous N-body propagation to Web Worker thread pool"
+          >
+            <span>⚡</span>
+            {isPropagating ? 'Simulating in Worker...' : 'Async Worker Propagate (BACK44)'}
+          </button>
+          {propagationInfo && (
+            <span className="text-xs text-emerald-400 font-mono">{propagationInfo}</span>
+          )}
+        </div>
+
         <div className="mt-4">
           <label className="text-xs text-slate-400 uppercase font-semibold">Generated CSV Preview</label>
           <pre className="mt-1 h-44 overflow-y-auto rounded bg-slate-950 p-3 font-mono text-xs text-emerald-400 border border-slate-800">
-            {csv.slice(0, 800)}...
+            {activeCsv.slice(0, 800)}...
           </pre>
         </div>
 

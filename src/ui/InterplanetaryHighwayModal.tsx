@@ -28,7 +28,7 @@ export const InterplanetaryHighwayModal: React.FC<Props> = ({ isOpen, onClose, b
   const previewManifold = (name: string) => {
     EventBus.emit('ui:toast', {
       type: 'info',
-      message: `Navigating Invariant Manifold: ${name} (Zero-Δv Ballistic Capture)`,
+      message: `Navigating Transit Corridor Approximation: ${name} (Low-Δv Transfer)`,
     });
   };
 
@@ -37,14 +37,14 @@ export const InterplanetaryHighwayModal: React.FC<Props> = ({ isOpen, onClose, b
       <div className="bg-slate-900/95 border border-indigo-500/40 rounded-xl p-6 max-w-md w-full text-slate-100 shadow-2xl shadow-indigo-950/60 font-mono text-xs">
         <div className="flex justify-between items-center mb-4 border-b border-slate-700/60 pb-2">
           <h2 className="text-lg font-bold text-indigo-400 flex items-center gap-2">
-            <span>🌀</span> Interplanetary Transport Network (ITN)
+            <span>🌀</span> CR3BP Transit Corridor Approximations
           </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white px-2 py-1">✕</button>
         </div>
 
         <div className="space-y-3">
           <div className="text-slate-300">
-            Low-energy ballistic corridors along Jacobi invariant manifold tubes (Weak Stability Boundary).
+            CR3BP-inspired low-energy ballistic corridor approximations derived from collinear libration geometry and Jacobi energy scaling.
           </div>
 
           <div className="space-y-2">

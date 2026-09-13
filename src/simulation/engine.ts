@@ -36,6 +36,7 @@ export class SimulationEngine {
   public systemStatus: SystemStatus = 'active';
   public adaptiveTimestepEnabled: boolean = false;
   public adaptiveController: AdaptiveTimestepController = new AdaptiveTimestepController(1.0, 3600.0, 1e-4);
+  public currentAdaptiveDt: number = 60.0;
 
   private accumulatorSec: number = 0;
   private readonly fixedStepSec: number = 60.0; // 1 minute fixed physics step
@@ -74,36 +75,96 @@ export class SimulationEngine {
     this.accumulatorSec += simDt;
     let substepsDone = 0;
 
-    while (this.accumulatorSec >= stepSize && substepsDone < this.maxSubstepsPerTick) {
-      const ok = stepVelocityVerlet(this.bodies, stepSize);
-      if (!ok) {
-        this.isPaused = true;
-        this.events.push({
-          id: `nan-${Date.now()}`,
-          timestampSec: this.timeSec,
-          type: 'orbit_unbound',
-          title: 'Simulation Instability Detected',
-          description: 'Calculations encountered NaN or infinite divergence. Simulation has been paused to protect state.',
-          severity: 'catastrophe',
-        });
-        break;
-      }
-
-      this.timeSec += stepSize;
-      this.accumulatorSec -= stepSize;
-      substepsDone++;
-
-      // Check collisions at regular intervals
-      if (this.enableCollisions && this.bodies.length > 1) {
-        const colResults = resolveCollisions(this.bodies, this.timeSec, this.debris);
-        for (const cr of colResults) {
-          this.events.push(cr.event);
+    if (!this.adaptiveTimestepEnabled) {
+      // PRESERVE DEFAULT: deterministic fixed-step Velocity Verlet loop
+      while (this.accumulatorSec >= stepSize && substepsDone < this.maxSubstepsPerTick) {
+        const ok = stepVelocityVerlet(this.bodies, stepSize);
+        if (!ok) {
+          this.isPaused = true;
+          this.events.push({
+            id: `nan-${Date.now()}`,
+            timestampSec: this.timeSec,
+            type: 'orbit_unbound',
+            title: 'Simulation Instability Detected',
+            description: 'Calculations encountered NaN or infinite divergence. Simulation has been paused to protect state.',
+            severity: 'catastrophe',
+          });
+          break;
         }
+
+        this.timeSec += stepSize;
+        this.accumulatorSec -= stepSize;
+        substepsDone++;
+
+        // Check collisions at regular intervals
+        if (this.enableCollisions && this.bodies.length > 1) {
+          const colResults = resolveCollisions(this.bodies, this.timeSec, this.debris);
+          for (const cr of colResults) {
+            this.events.push(cr.event);
+          }
+        }
+      }
+    } else {
+      // ADAPTIVE PATH: step-doubling error-controlled Velocity Verlet
+      const minDt = this.adaptiveController.getMinDt();
+      while (this.accumulatorSec >= minDt && substepsDone < this.maxSubstepsPerTick) {
+        let candidateDt = Math.min(this.accumulatorSec, Math.max(minDt, this.currentAdaptiveDt));
+        let retries = 0;
+        let stepAccepted = false;
+
+        while (retries < 3 && !stepAccepted) {
+          const result = this.adaptiveController.stepAdaptiveVerlet(this.bodies, candidateDt);
+          if (!result.success) {
+            this.isPaused = true;
+            this.events.push({
+              id: `nan-${Date.now()}`,
+              timestampSec: this.timeSec,
+              type: 'orbit_unbound',
+              title: 'Simulation Instability Detected',
+              description: 'Calculations encountered NaN or infinite divergence in adaptive step. Simulation paused.',
+              severity: 'catastrophe',
+            });
+            break;
+          }
+
+          this.currentAdaptiveDt = result.nextDt;
+
+          if (result.accepted) {
+            this.bodies = result.bodies;
+            this.timeSec += result.actualDt;
+            this.accumulatorSec -= result.actualDt;
+            stepAccepted = true;
+            substepsDone++;
+
+            if (this.enableCollisions && this.bodies.length > 1) {
+              const colResults = resolveCollisions(this.bodies, this.timeSec, this.debris);
+              for (const cr of colResults) {
+                this.events.push(cr.event);
+              }
+            }
+          } else {
+            // Step rejected: reduce candidateDt and retry
+            candidateDt = Math.max(minDt, result.nextDt);
+            retries++;
+            if (retries >= 3) {
+              // Retries exhausted: step at minDt to guarantee progress
+              const fallbackOk = stepVelocityVerlet(this.bodies, minDt);
+              if (fallbackOk) {
+                this.timeSec += minDt;
+                this.accumulatorSec -= minDt;
+                substepsDone++;
+              }
+              stepAccepted = true;
+            }
+          }
+        }
+
+        if (this.isPaused) break;
       }
     }
 
     // Residual clamp to prevent lag buildup
-    if (this.accumulatorSec > stepSize * 2) {
+    if (this.accumulatorSec > (this.adaptiveTimestepEnabled ? this.currentAdaptiveDt * 2 : stepSize * 2)) {
       this.accumulatorSec = 0;
     }
 
