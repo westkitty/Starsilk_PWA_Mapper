@@ -2,6 +2,8 @@ import React from "react";
 import { Compass } from "lucide-react";
 import { CameraController } from "../rendering/camera-controller";
 
+import { InclinationCaliper } from "./InclinationCaliper";
+
 interface OrientationCubeProps {
   cameraController: CameraController | null;
 }
@@ -67,6 +69,14 @@ export const OrientationCube: React.FC<OrientationCubeProps> = ({ cameraControll
         >
           ISO
         </button>
+      </div>
+
+      <div style={{ width: "100%", marginTop: "4px" }}>
+        <InclinationCaliper
+          currentElevationDeg={45}
+          onSnapEcliptic={() => handleSnap("top")}
+          onSnapPolar={() => handleSnap("front")}
+        />
       </div>
     </div>
   );

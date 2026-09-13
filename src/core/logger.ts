@@ -73,3 +73,4 @@ export class Logger {
 }
 
 export const appLogger = new Logger();
+export const logger = appLogger;

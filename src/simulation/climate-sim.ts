@@ -44,3 +44,17 @@ export function evaluateClimate(
     climateZone,
   };
 }
+
+export function calculatePlanetaryClimate(
+  body: { albedo?: number; greenhouseOffsetK?: number },
+  distanceKm: number,
+  starLuminosityW: number
+) {
+  const state = evaluateClimate(distanceKm, starLuminosityW, body.albedo ?? 0.3, body.greenhouseOffsetK ?? 0);
+  const distM = distanceKm * 1000;
+  const flux = starLuminosityW / (4 * Math.PI * distM * distM || 1);
+  return {
+    ...state,
+    stellarFluxWM2: flux,
+  };
+}

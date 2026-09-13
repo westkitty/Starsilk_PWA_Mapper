@@ -173,3 +173,13 @@ export function calculateSystemEnergy(bodies: CelestialBody[]): { kinetic: numbe
 
   return { kinetic, potential, total: kinetic + potential };
 }
+
+export function integrateStep(bodies: CelestialBody[], dtSeconds: number): CelestialBody[] {
+  const next = bodies.map(b => ({
+    ...b,
+    position: { ...b.position },
+    velocity: { ...b.velocity },
+  }));
+  stepVelocityVerlet(next, dtSeconds);
+  return next;
+}

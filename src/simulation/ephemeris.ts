@@ -43,3 +43,12 @@ export function exportEphemerisCsv(bodies: CelestialBody[], simTimeSec: number):
 
   return [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
 }
+
+export function exportEphemerisToHorizonsCsv(
+  bodies: CelestialBody[],
+  _stepDtSec = 86400,
+  _totalSteps = 30
+): string {
+  let output = exportEphemerisCsv(bodies, 0);
+  return output;
+}

@@ -5,6 +5,7 @@ import { calculateOsculatingElements, detectResonance } from '../simulation/orbi
 import { Trash2, Focus, Move, Sparkles, Eye } from 'lucide-react';
 import { ResonanceBadge } from './ResonanceBadge';
 import { HabitabilityBadge } from './HabitabilityBadge';
+import { ApsidesOverlay } from './ApsidesOverlay';
 
 interface ContextInspectorProps {
   selectedBody: CelestialBody | null;
@@ -276,6 +277,10 @@ export const ContextInspector: React.FC<ContextInspectorProps> = ({
                 {elements.isBound ? 'BOUND' : 'ESCAPE'}
               </div>
             </div>
+          </div>
+
+          <div style={{ marginTop: '4px' }}>
+            <ApsidesOverlay selectedBody={selectedBody} primaryBody={primary || null} />
           </div>
 
           {/* Hill Sphere & Roche Limit */}

@@ -70,3 +70,17 @@ export const ASTRODYNAMIC_CHALLENGES: Challenge[] = [
     },
   },
 ];
+
+export type ChallengeScenario = Challenge;
+
+export function evaluateChallenge(
+  challenge: Challenge,
+  bodies: CelestialBody[]
+): { completed: boolean; progressFraction: number; statusMessage: string } {
+  const res = challenge.checkSuccess(bodies);
+  return {
+    completed: res.success,
+    progressFraction: res.progressPct / 100,
+    statusMessage: res.hint,
+  };
+}

@@ -3,16 +3,21 @@
  * Identifies mean-motion orbital period ratios (1:2, 2:3, 3:4, 1:3, 2:5) between orbiting bodies.
  */
 
-import { OsculatingElements } from "./types";
+import { CelestialBody, OsculatingElements } from "./types";
+import { calculateOsculatingElements, findDominantPrimary } from "./orbital-mechanics";
 
 export interface ResonanceMatch {
   bodyIdA: string;
   bodyIdB: string;
+  body1Name?: string;
+  body2Name?: string;
   periodA: number;
   periodB: number;
   ratioA: number;
   ratioB: number;
+  ratio: string;
   ratioLabel: string;
+  divergence: number;
   deviationPct: number;
 }
 
@@ -28,9 +33,30 @@ const COMMON_RATIOS: [number, number][] = [
 ];
 
 export function detectResonances(
-  orbits: { bodyId: string; elements: OsculatingElements }[],
+  orbitsOrBodies: ({ bodyId: string; elements: OsculatingElements; name?: string })[] | CelestialBody[],
   tolerancePct: number = 3.0
 ): ResonanceMatch[] {
+  let orbits: { bodyId: string; elements: OsculatingElements; name?: string }[] = [];
+
+  if (orbitsOrBodies.length > 0 && 'position' in orbitsOrBodies[0]) {
+    const bodies = orbitsOrBodies as CelestialBody[];
+    const primaries = bodies.filter(b => b.type === 'star' || (!b.primaryId && b.fixed));
+    const primary = primaries[0] || bodies[0];
+
+    for (const b of bodies) {
+      if (b.id === primary.id) continue;
+      const dom = findDominantPrimary(b, bodies) || primary;
+      const elem = calculateOsculatingElements(b, dom);
+      orbits.push({
+        bodyId: b.id,
+        name: b.name,
+        elements: elem,
+      });
+    }
+  } else {
+    orbits = orbitsOrBodies as { bodyId: string; elements: OsculatingElements; name?: string }[];
+  }
+
   const matches: ResonanceMatch[] = [];
 
   for (let i = 0; i < orbits.length; i++) {
@@ -51,11 +77,15 @@ export function detectResonances(
           matches.push({
             bodyIdA: oA.bodyId,
             bodyIdB: oB.bodyId,
+            body1Name: oA.name || oA.bodyId,
+            body2Name: oB.name || oB.bodyId,
             periodA: oA.elements.periodSec,
             periodB: oB.elements.periodSec,
             ratioA: rA,
             ratioB: rB,
+            ratio: `${rA}:${rB}`,
             ratioLabel: `${rA}:${rB}`,
+            divergence: Number((deviationPct / 100).toFixed(4)),
             deviationPct: Number(deviationPct.toFixed(2)),
           });
           break;

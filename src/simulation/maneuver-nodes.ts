@@ -3,16 +3,21 @@
  * Places planned instantaneous Delta-V impulse burns along trajectories.
  */
 
-import { Vector3D } from "./types";
+import { CelestialBody, Vector3D } from "./types";
 
 export interface ManeuverNode {
   id: string;
-  bodyId: string;
-  scheduledTimeSec: number;
-  progradeDeltaVKmS: number;
-  radialDeltaVKmS: number;
-  normalDeltaVKmS: number;
-  isExecuted: boolean;
+  bodyId?: string;
+  targetBodyId?: string;
+  scheduledTimeSec?: number;
+  epochSeconds?: number;
+  progradeDeltaVKmS?: number;
+  deltaVProgradeKmS?: number;
+  radialDeltaVKmS?: number;
+  deltaVRadialKmS?: number;
+  normalDeltaVKmS?: number;
+  deltaVNormalKmS?: number;
+  isExecuted?: boolean;
 }
 
 export function applyManeuverImpulse(
@@ -35,9 +40,24 @@ export function applyManeuverImpulse(
     z: prograde.x * normal.y - prograde.y * normal.x,
   };
 
+  const dVPro = node.deltaVProgradeKmS ?? node.progradeDeltaVKmS ?? 0;
+  const dVRad = node.deltaVRadialKmS ?? node.radialDeltaVKmS ?? 0;
+  const dVNorm = node.deltaVNormalKmS ?? node.normalDeltaVKmS ?? 0;
+
   return {
-    x: currentVelocity.x + prograde.x * node.progradeDeltaVKmS + radial.x * node.radialDeltaVKmS,
-    y: currentVelocity.y + prograde.y * node.progradeDeltaVKmS + radial.y * node.radialDeltaVKmS + normal.y * node.normalDeltaVKmS,
-    z: currentVelocity.z + prograde.z * node.progradeDeltaVKmS + radial.z * node.radialDeltaVKmS,
+    x: currentVelocity.x + prograde.x * dVPro + radial.x * dVRad,
+    y: currentVelocity.y + prograde.y * dVPro + radial.y * dVRad + normal.y * dVNorm,
+    z: currentVelocity.z + prograde.z * dVPro + radial.z * dVRad,
+  };
+}
+
+export function applyManeuverBurn(
+  body: CelestialBody,
+  node: ManeuverNode
+): CelestialBody {
+  const newVel = applyManeuverImpulse(body.velocity, node);
+  return {
+    ...body,
+    velocity: newVel,
   };
 }

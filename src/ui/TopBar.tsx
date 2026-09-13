@@ -5,7 +5,9 @@ import { SystemStatus, CelestialBody } from '../simulation/types';
 import { BodySearchBar } from './BodySearchBar';
 import { ThemeSelector, AstrometricTheme } from './ThemeSelector';
 import { AccessibilityControls } from './AccessibilityControls';
-import { BarChart2, Compass, HelpCircle } from 'lucide-react';
+import { ScreenshotTool } from './ScreenshotTool';
+import { VirialGauge } from './VirialGauge';
+import { BarChart2, Compass, HelpCircle, Share2, Rocket, Award, CloudSun, Sparkle, Activity, FileText, Navigation, Zap, Cpu } from 'lucide-react';
 
 export type AppMode = 'BUILD' | 'SIMULATE' | 'FORECAST' | 'CANON LAB' | 'PRESENT';
 
@@ -25,13 +27,23 @@ interface TopBarProps {
   onToggleGravityGrid: () => void;
   onExport: () => void;
   onImport: () => void;
-  onLoadPreset: (name: 'demo' | 'meridian' | 'blank') => void;
+  onLoadPreset: (name: 'demo' | 'meridian' | 'blank' | 'sol' | 'trappist') => void;
   bodies?: CelestialBody[];
   onSelectBody?: (id: string) => void;
   onOpenNavigator?: () => void;
   onOpenStats?: () => void;
   onOpenShortcuts?: () => void;
   onOpenAudioSettings?: () => void;
+  onOpenTransfer?: () => void;
+  onOpenResonance?: () => void;
+  onOpenChallenge?: () => void;
+  onOpenEphemeris?: () => void;
+  onOpenManeuver?: () => void;
+  onOpenClimate?: () => void;
+  onOpenProcedural?: () => void;
+  onOpenStellarIntruder?: () => void;
+  onOpenShare?: () => void;
+  onTogglePerf?: () => void;
   currentTheme?: AstrometricTheme;
   onSelectTheme?: (theme: AstrometricTheme) => void;
   isHighContrast?: boolean;
@@ -61,6 +73,16 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenStats,
   onOpenShortcuts,
   onOpenAudioSettings,
+  onOpenTransfer,
+  onOpenResonance,
+  onOpenChallenge,
+  onOpenEphemeris,
+  onOpenManeuver,
+  onOpenClimate,
+  onOpenProcedural,
+  onOpenStellarIntruder,
+  onOpenShare,
+  onTogglePerf,
   currentTheme = 'obsidian',
   onSelectTheme,
   isHighContrast = false,
@@ -144,6 +166,36 @@ export const TopBar: React.FC<TopBarProps> = ({
           title="Empty void for new creation"
         >
           Blank System
+        </button>
+        <button
+          onClick={() => onLoadPreset('sol')}
+          style={{
+            background: 'rgba(7, 19, 30, 0.8)',
+            border: '1px solid var(--border-subtle)',
+            color: 'var(--text-secondary)',
+            fontSize: '11px',
+            padding: '4px 8px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+          }}
+          title="Load Real Solar System (Sun + 8 Planets)"
+        >
+          Sol
+        </button>
+        <button
+          onClick={() => onLoadPreset('trappist')}
+          style={{
+            background: 'rgba(7, 19, 30, 0.8)',
+            border: '1px solid var(--border-subtle)',
+            color: 'var(--text-secondary)',
+            fontSize: '11px',
+            padding: '4px 8px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+          }}
+          title="Load 7-Planet Resonant TRAPPIST-1 System"
+        >
+          TRAPPIST-1
         </button>
       </div>
 
@@ -300,6 +352,192 @@ export const TopBar: React.FC<TopBarProps> = ({
         {onSelectTheme && <ThemeSelector currentTheme={currentTheme} onSelectTheme={onSelectTheme} />}
         {onToggleHighContrast && (
           <AccessibilityControls isHighContrast={isHighContrast} onToggleHighContrast={onToggleHighContrast} />
+        )}
+
+        {/* Virial Equilibrium Gauge */}
+        <VirialGauge bodies={bodies} />
+
+        {/* Screenshot Exporter */}
+        <ScreenshotTool />
+
+        {/* Hohmann Transfer Calculator */}
+        {onOpenTransfer && (
+          <button
+            onClick={onOpenTransfer}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="Interplanetary Transfer Calculator"
+          >
+            <Rocket size={14} />
+          </button>
+        )}
+
+        {/* Resonances Catalog */}
+        {onOpenResonance && (
+          <button
+            onClick={onOpenResonance}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="Mean-Motion Resonance Catalog"
+          >
+            <Activity size={14} />
+          </button>
+        )}
+
+        {/* Challenges Hub */}
+        {onOpenChallenge && (
+          <button
+            onClick={onOpenChallenge}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="Astrodynamic Challenges & Missions"
+          >
+            <Award size={14} />
+          </button>
+        )}
+
+        {/* Climate & Biosphere Inspector */}
+        {onOpenClimate && (
+          <button
+            onClick={onOpenClimate}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="Climate & Earth Similarity Index"
+          >
+            <CloudSun size={14} />
+          </button>
+        )}
+
+        {/* Procedural System Synthesizer */}
+        {onOpenProcedural && (
+          <button
+            onClick={onOpenProcedural}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="Procedural System Synthesizer"
+          >
+            <Sparkle size={14} />
+          </button>
+        )}
+
+        {/* Ephemeris Export */}
+        {onOpenEphemeris && (
+          <button
+            onClick={onOpenEphemeris}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="NASA Horizons Ephemeris Exporter"
+          >
+            <FileText size={14} />
+          </button>
+        )}
+
+        {/* Maneuver Node */}
+        {onOpenManeuver && (
+          <button
+            onClick={onOpenManeuver}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="Impulsive Maneuver Node Planner"
+          >
+            <Navigation size={14} />
+          </button>
+        )}
+
+        {/* Rogue Stellar Intruder */}
+        {onOpenStellarIntruder && (
+          <button
+            onClick={onOpenStellarIntruder}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="Inject Rogue Stellar Intruder"
+          >
+            <Zap size={14} />
+          </button>
+        )}
+
+        {/* Telemetry Overlay Toggle */}
+        {onTogglePerf && (
+          <button
+            onClick={onTogglePerf}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="Toggle Engine Telemetry Overlay"
+          >
+            <Cpu size={14} />
+          </button>
+        )}
+
+        {/* Share System */}
+        {onOpenShare && (
+          <button
+            onClick={onOpenShare}
+            style={{
+              background: 'rgba(7, 19, 30, 0.8)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              cursor: 'pointer',
+            }}
+            title="Share System Link / Sigil"
+          >
+            <Share2 size={14} />
+          </button>
         )}
 
         {/* Export / Import */}

@@ -65,6 +65,14 @@ export class PerformanceMonitor {
   getLatestSample(): FrameSample | null {
     return this.buffer.length > 0 ? this.buffer[this.buffer.length - 1] : null;
   }
+
+  getSummary(): { fps: number; averageFrameTimeMs: number } {
+    const avg = this.getAverageMetrics();
+    return {
+      fps: avg.avgFps,
+      averageFrameTimeMs: avg.avgFrameMs,
+    };
+  }
 }
 
 export const perfMonitor = new PerformanceMonitor();

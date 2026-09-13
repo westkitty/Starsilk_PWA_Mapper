@@ -19,6 +19,7 @@ export type SimulationEventType =
   | "timeline:step"
   | "timeline:pause_toggle"
   | "toast:notify"
+  | "system:toast"
   | "challenge:progress"
   | "perf:report";
 
@@ -38,6 +39,7 @@ export interface EventPayloads {
   "timeline:step": { dtSeconds: number; simTimeSec: number };
   "timeline:pause_toggle": { isPaused: boolean };
   "toast:notify": { message: string; type?: "info" | "success" | "warn" | "error"; durationMs?: number };
+  "system:toast": { title?: string; message: string; type?: "info" | "success" | "warn" | "warning" | "error"; durationMs?: number };
   "challenge:progress": { challengeId: string; isComplete: boolean; progressPct: number };
   "perf:report": { fps: number; frameDeltaMs: number; physicsStepMs: number; drawCalls: number };
 }

@@ -53,6 +53,18 @@ import { generateProceduralSystem } from './simulation/presets/procedural-system
 import { eventBus } from './core/event-bus';
 import { undoStack } from './simulation/undo-stack';
 import { autosaveManager } from './persistence/autosave';
+import { TransferWindowModal } from './ui/TransferWindowModal';
+import { ResonanceModal } from './ui/ResonanceModal';
+import { ChallengeModal } from './ui/ChallengeModal';
+import { EphemerisExportModal } from './ui/EphemerisExportModal';
+import { ManeuverNodeModal } from './ui/ManeuverNodeModal';
+import { ClimateInspectorModal } from './ui/ClimateInspectorModal';
+import { ProceduralGenModal } from './ui/ProceduralGenModal';
+import { StellarIntruderModal } from './ui/StellarIntruderModal';
+import { ShareSystemModal } from './ui/ShareSystemModal';
+import { PerfOverlay } from './ui/PerfOverlay';
+import { createSolarSystemPreset, createTrappist1Preset } from './simulation/presets/solar-system-presets';
+import { decodeSystemFromUrl } from './persistence/url-state';
 import { perfMonitor } from './core/perf-monitor';
 import { TemporalHistoryBuffer } from './rendering/temporal-history';
 import { stepVelocityVerlet } from './simulation/integrator';
@@ -145,6 +157,18 @@ export const App: React.FC = () => {
   const [currentTheme, setCurrentTheme] = useState<AstrometricTheme>('obsidian');
   const [isHighContrast, setIsHighContrast] = useState(false);
   const [collisionWarning, setCollisionWarning] = useState<{ hasWarning: boolean; message: string }>({ hasWarning: false, message: '' });
+
+  // Astrodynamics & New Tools Modals (Iteration 2)
+  const [isTransferOpen, setIsTransferOpen] = useState(false);
+  const [isResonanceOpen, setIsResonanceOpen] = useState(false);
+  const [isChallengeOpen, setIsChallengeOpen] = useState(false);
+  const [isEphemerisExportOpen, setIsEphemerisExportOpen] = useState(false);
+  const [isManeuverOpen, setIsManeuverOpen] = useState(false);
+  const [isClimateOpen, setIsClimateOpen] = useState(false);
+  const [isProceduralOpen, setIsProceduralOpen] = useState(false);
+  const [isStellarIntruderOpen, setIsStellarIntruderOpen] = useState(false);
+  const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isPerfOpen, setIsPerfOpen] = useState(false);
 
   // Interaction & Instrumentation Expansion (#26–#50)
   const [isPrecisionMode, setIsPrecisionMode] = useState(false);
@@ -249,6 +273,25 @@ export const App: React.FC = () => {
     const initialPreset = createDemonstrationSystem();
     const engine = new SimulationEngine(initialPreset.bodies, { enableCollisions: true });
     engine.belts = initialPreset.belts;
+
+    // Check if a shared system was provided via URL parameter
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const sharedCode = params.get('system');
+      if (sharedCode) {
+        const decoded = decodeSystemFromUrl(sharedCode);
+        if (decoded && decoded.bodies.length > 0) {
+          engine.bodies = decoded.bodies;
+          if (decoded.name) setProjectName(decoded.name);
+          eventBus.emit('system:toast', {
+            title: 'Shared System Loaded',
+            message: `Loaded "${decoded.name}" from URL.`,
+            type: 'info',
+          });
+        }
+      }
+    }
+
     engineRef.current = engine;
 
     // 3. Initialize BranchManager
@@ -1027,7 +1070,7 @@ export const App: React.FC = () => {
   };
 
   // Load Presets
-  const handleLoadPreset = (presetType: 'demo' | 'meridian' | 'blank' | 'procedural') => {
+  const handleLoadPreset = (presetType: 'demo' | 'meridian' | 'blank' | 'procedural' | 'sol' | 'trappist') => {
     if (!engineRef.current || !sceneRef.current) return;
 
     let preset: { bodies: CelestialBody[]; belts?: any[] };
@@ -1039,6 +1082,12 @@ export const App: React.FC = () => {
     } else if (presetType === 'meridian') {
       preset = createMeridianPreset();
       pName = 'Virgil & Meridian Reference Study';
+    } else if (presetType === 'sol') {
+      preset = { bodies: createSolarSystemPreset() };
+      pName = 'Solar System (Sol)';
+    } else if (presetType === 'trappist') {
+      preset = { bodies: createTrappist1Preset() };
+      pName = 'TRAPPIST-1 System';
     } else if (presetType === 'procedural') {
       const generated = generateProceduralSystem(Date.now());
       preset = { bodies: generated.bodies };
@@ -1241,6 +1290,16 @@ export const App: React.FC = () => {
           onOpenStats={() => setIsStatsOpen(true)}
           onOpenShortcuts={() => setIsShortcutsOpen(true)}
           onOpenAudioSettings={() => setIsAudioSettingsOpen(true)}
+          onOpenTransfer={() => setIsTransferOpen(true)}
+          onOpenResonance={() => setIsResonanceOpen(true)}
+          onOpenChallenge={() => setIsChallengeOpen(true)}
+          onOpenEphemeris={() => setIsEphemerisExportOpen(true)}
+          onOpenManeuver={() => setIsManeuverOpen(true)}
+          onOpenClimate={() => setIsClimateOpen(true)}
+          onOpenProcedural={() => setIsProceduralOpen(true)}
+          onOpenStellarIntruder={() => setIsStellarIntruderOpen(true)}
+          onOpenShare={() => setIsShareOpen(true)}
+          onTogglePerf={() => setIsPerfOpen(!isPerfOpen)}
           currentTheme={currentTheme}
           onSelectTheme={(t) => setCurrentTheme(t)}
           isHighContrast={isHighContrast}
@@ -1584,6 +1643,96 @@ export const App: React.FC = () => {
       {isOnboardingOpen && (
         <OnboardingOverlay onComplete={() => setIsOnboardingOpen(false)} />
       )}
+
+      {/* Transfer Window Modal (UI16) */}
+      <TransferWindowModal
+        isOpen={isTransferOpen}
+        onClose={() => setIsTransferOpen(false)}
+        bodies={engineRef.current?.bodies || []}
+      />
+
+      {/* Resonance Modal (UI17) */}
+      <ResonanceModal
+        isOpen={isResonanceOpen}
+        onClose={() => setIsResonanceOpen(false)}
+        bodies={engineRef.current?.bodies || []}
+      />
+
+      {/* Challenge Modal (UI18) */}
+      <ChallengeModal
+        isOpen={isChallengeOpen}
+        onClose={() => setIsChallengeOpen(false)}
+        bodies={engineRef.current?.bodies || []}
+      />
+
+      {/* Ephemeris Export Modal (UI19) */}
+      <EphemerisExportModal
+        isOpen={isEphemerisExportOpen}
+        onClose={() => setIsEphemerisExportOpen(false)}
+        bodies={engineRef.current?.bodies || []}
+      />
+
+      {/* Maneuver Node Modal (UI20) */}
+      <ManeuverNodeModal
+        isOpen={isManeuverOpen}
+        onClose={() => setIsManeuverOpen(false)}
+        bodies={engineRef.current?.bodies || []}
+        onApplyBurn={(updated) => {
+          if (engineRef.current && sceneRef.current) {
+            engineRef.current.bodies = updated;
+            sceneRef.current.syncBodies(updated);
+            setFrameCount(c => c + 1);
+          }
+        }}
+      />
+
+      {/* Climate Inspector Modal (UI21) */}
+      <ClimateInspectorModal
+        isOpen={isClimateOpen}
+        onClose={() => setIsClimateOpen(false)}
+        bodies={engineRef.current?.bodies || []}
+      />
+
+      {/* Procedural Generator Modal (UI22) */}
+      <ProceduralGenModal
+        isOpen={isProceduralOpen}
+        onClose={() => setIsProceduralOpen(false)}
+        onGenerate={(newBodies) => {
+          if (engineRef.current && sceneRef.current) {
+            engineRef.current.bodies = newBodies;
+            engineRef.current.timeSec = 0;
+            sceneRef.current.syncBodies(newBodies);
+            setFrameCount(c => c + 1);
+          }
+        }}
+      />
+
+      {/* Stellar Intruder Modal (UI26) */}
+      <StellarIntruderModal
+        isOpen={isStellarIntruderOpen}
+        onClose={() => setIsStellarIntruderOpen(false)}
+        onSpawn={(intruder) => {
+          if (engineRef.current && sceneRef.current) {
+            engineRef.current.bodies.push(intruder);
+            sceneRef.current.syncBodies(engineRef.current.bodies);
+            setFrameCount(c => c + 1);
+          }
+        }}
+      />
+
+      {/* Share System Modal (UI30) */}
+      <ShareSystemModal
+        isOpen={isShareOpen}
+        onClose={() => setIsShareOpen(false)}
+        systemName={projectName}
+        bodies={engineRef.current?.bodies || []}
+      />
+
+      {/* Performance Overlay (UI29) */}
+      <PerfOverlay
+        isVisible={isPerfOpen}
+        onToggle={() => setIsPerfOpen(!isPerfOpen)}
+      />
     </div>
     </ErrorBoundary>
   );

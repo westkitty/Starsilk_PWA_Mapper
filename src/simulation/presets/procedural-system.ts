@@ -7,12 +7,18 @@ import { CelestialBody } from "../types";
 import { SeededRNG } from "../../core/seeded-rng";
 import { KM_PER_AU, SOLAR_MASS_KG, SOLAR_RADIUS_KM, EARTH_MASS_KG, EARTH_RADIUS_KM, JUPITER_MASS_KG, JUPITER_RADIUS_KM, G_KM } from "../units";
 
-export function generateProceduralSystem(seed: number = 42): { name: string; bodies: CelestialBody[] } {
+export function generateProceduralSystem(
+  configOrSeed: number | { starName?: string; planetCount?: number; seed?: number } = 42
+): { name: string; bodies: CelestialBody[] } {
+  const seed = typeof configOrSeed === "number" ? configOrSeed : (configOrSeed.seed ?? 42);
+  const customStarName = typeof configOrSeed === "object" ? configOrSeed.starName : undefined;
+  const customPlanetCount = typeof configOrSeed === "object" ? configOrSeed.planetCount : undefined;
+
   const rng = new SeededRNG(seed);
   const bodies: CelestialBody[] = [];
 
   const starNames = ["Aethelgard", "Vespera", "Solas-9", "Caelum", "Zephyros", "Drakken-Prime"];
-  const starName = rng.pick(starNames) + "-" + rng.intRange(10, 99);
+  const starName = customStarName || (rng.pick(starNames) + "-" + rng.intRange(10, 99));
 
   // 1. Primary Star
   const star: CelestialBody = {
@@ -31,7 +37,7 @@ export function generateProceduralSystem(seed: number = 42): { name: string; bod
   bodies.push(star);
 
   // 2. Planets (3 to 6)
-  const planetCount = rng.intRange(3, 6);
+  const planetCount = customPlanetCount ?? rng.intRange(3, 6);
   let currentDistanceAu = rng.range(0.35, 0.55);
 
   const planetTypes: CelestialBody["classification"][] = ["rocky", "desert", "oceanic", "gas_giant", "ice"];
